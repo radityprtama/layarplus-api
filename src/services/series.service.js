@@ -3,7 +3,7 @@
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
 const { CACHE_TTL } = require('../config/env');
-const { mapApiItem, mapApiDetail } = require('../lib/scraper');
+const { mapApiItem, mapApiDetail, mapEpisode } = require('../lib/scraper');
 
 function fetchPage(resource, page, limit, sort) {
   return httpClient.getJson(`/api/${resource}?page=${page}&limit=${limit}&sort=${sort || 'createdAt'}`);
@@ -117,6 +117,28 @@ async function getDetail(slug) {
     const err = new Error('Series not found');
     err.status = 404;
     throw err;
+  }
+
+  // Upstream /api/series/{slug} returns season summaries WITHOUT episodes.
+  // Episodes live at /api/series/{slug}/season/{N}; fetch them in parallel.
+  // ponytail: per-season fetch is the only source; cached with the detail so it's one-time.
+  if (Array.isArray(detail.seasons) && detail.seasons.length) {
+    await Promise.all(
+      detail.seasons.map(async (s) => {
+        if (s.episodes && s.episodes.length) return; // already populated
+        try {
+          const sd = await httpClient.getJson(`/api/series/${slug}/season/${s.seasonNumber}`);
+          const eps = (sd && sd.season && sd.season.episodes) || [];
+          s.episodes = eps.map((e) => mapEpisode(e, {
+            seasonPosterPath: sd?.season?.posterPath,
+            seriesBackdropPath: data?.backdropPath,
+            seriesPosterPath: data?.posterPath,
+          }));
+        } catch {
+          /* leave this season's episodes empty on failure */
+        }
+      })
+    );
   }
 
   cache.set(key, detail);

@@ -87,6 +87,49 @@ function mapApiItem(item) {
  * @param {Object} item - The raw JSON item from /api/movies/:slug or /api/series/:slug
  * @returns {Object} Standardized detail item
  */
+/**
+ * Maps a single upstream episode object into our standardized Episode DTO.
+ *
+ * Resolves the final thumbnail URL with this fallback chain:
+ *   episode stillPath → season poster → series backdrop → series poster → null
+ *
+ * Forward-looking: also exposes runtime, airDate, and voteAverage so the
+ * frontend can render richer episode cards without another backend change.
+ *
+ * @param {Object} ep - Raw upstream episode from the season endpoint
+ * @param {Object} [context]
+ * @param {string} [context.seasonPosterPath]  - TMDB path for the season poster
+ * @param {string} [context.seriesBackdropPath] - TMDB path for the series backdrop
+ * @param {string} [context.seriesPosterPath]   - TMDB path for the series poster
+ * @returns {Object} Standardized episode DTO
+ */
+function mapEpisode(ep, context = {}) {
+  const { seasonPosterPath, seriesBackdropPath, seriesPosterPath } = context;
+
+  const stillUrl = ep.stillPath
+    ? `https://image.tmdb.org/t/p/w300${ep.stillPath}`
+    : null;
+  const seasonPosterUrl = seasonPosterPath
+    ? `https://image.tmdb.org/t/p/w300${seasonPosterPath}`
+    : null;
+  const seriesBackdropUrl = seriesBackdropPath
+    ? `https://image.tmdb.org/t/p/w1280${seriesBackdropPath}`
+    : null;
+  const seriesPosterUrl = seriesPosterPath
+    ? `https://image.tmdb.org/t/p/w300${seriesPosterPath}`
+    : null;
+
+  return {
+    episodeNumber: ep.episodeNumber,
+    title: ep.name || ep.title || `Episode ${ep.episodeNumber}`,
+    overview: ep.overview || null,
+    thumbnail: stillUrl || seasonPosterUrl || seriesBackdropUrl || seriesPosterUrl || null,
+    runtime: ep.runtime ? parseInt(ep.runtime, 10) : null,
+    airDate: ep.airDate || null,
+    voteAverage: ep.voteAverage ? parseFloat(ep.voteAverage) : null,
+  };
+}
+
 function mapApiDetail(item) {
   if (!item) return {};
   const isSeries = !!item.numberOfSeasons;
@@ -115,6 +158,7 @@ function mapApiDetail(item) {
 
   return {
     title: item.title || '',
+    slug: item.slug || null,
     year,
     type: isSeries ? 'series' : 'movie',
     runtime,
@@ -144,10 +188,10 @@ function mapApiDetail(item) {
       name: s.name,
       seasonNumber: s.seasonNumber,
       episodeCount: s.episodeCount,
-      episodes: (s.episodes || []).map(e => ({
-        episodeNumber: e.episodeNumber,
-        title: e.title,
-        overview: e.overview
+      episodes: (s.episodes || []).map(e => mapEpisode(e, {
+        seasonPosterPath: s.posterPath,
+        seriesBackdropPath: item.backdropPath,
+        seriesPosterPath: item.posterPath,
       }))
     })) : null
   };
@@ -156,4 +200,5 @@ function mapApiDetail(item) {
 module.exports = {
   mapApiItem,
   mapApiDetail,
+  mapEpisode,
 };
