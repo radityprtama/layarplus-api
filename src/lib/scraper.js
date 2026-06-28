@@ -120,6 +120,7 @@ function mapApiDetail(item) {
     runtime,
     runtimeMinutes,
     overview: item.overview || null,
+    tagline: item.tagline || null,
     poster: posterUrl,
     backdrop: backdropUrl,
     logo: logoUrl,
