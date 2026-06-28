@@ -1,10 +1,14 @@
-'use strict';
+"use strict";
 
-const homepageService = require('../services/homepage.service');
-const { success } = require('../lib/responseHelper');
+const homepageService = require("../services/homepage.service");
+const { success } = require("../lib/responseHelper");
 
 exports.status = (req, res) => {
-  res.json({ success: true, message: 'LayarPlus API v3', repo: 'annurdien' });
+  res.json({
+    success: true,
+    message: "LayarPlus API v3",
+    repo: "radityprtama",
+  });
 };
 
 exports.featured = async (req, res, next) => {

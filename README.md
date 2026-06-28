@@ -1,6 +1,6 @@
 # LayarPlus API v3
 
-[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/annurdien/IDLIX-API/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/radityprtama/layarplus-api/blob/main/LICENSE)
 
 A REST API that scrapes `https://z2.idlixku.com/` using **Puppeteer + stealth plugin** to bypass Cloudflare and extract all available content data.
 
@@ -20,7 +20,7 @@ The easiest way to run the API is using Docker Compose. Since the Docker images 
 
 ```bash
 # 1. Download the docker-compose.yml file
-curl -O https://raw.githubusercontent.com/annurdien/IDLIX-API/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/radityprtama/layarplus-api/main/docker-compose.yml
 
 # 2. Spin up the API and the Stealth microservice
 docker compose up -d
