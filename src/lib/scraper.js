@@ -83,6 +83,23 @@ function mapApiItem(item) {
 }
 
 /**
+ * Ensures a raw upstream item has a `contentType` field before it reaches
+ * `mapApiItem`. The upstream `/api/series` browse endpoint intentionally
+ * omits `contentType` (the endpoint path already guarantees the type), but
+ * `mapApiItem` requires it for correct type classification.
+ *
+ * When `item.contentType` is already set the item is returned unchanged.
+ *
+ * @param {Object}   item        - Raw upstream item.
+ * @param {string}   [fallbackType='tv_series'] - Type to assign when missing.
+ * @returns {Object} Item with guaranteed contentType.
+ */
+function ensureContentType(item, fallbackType = 'tv_series') {
+  if (!item || item.contentType) return item;
+  return { ...item, contentType: fallbackType };
+}
+
+/**
  * Maps a native JSON API detail item from the upstream into our standardized schema.
  * @param {Object} item - The raw JSON item from /api/movies/:slug or /api/series/:slug
  * @returns {Object} Standardized detail item
@@ -201,4 +218,5 @@ module.exports = {
   mapApiItem,
   mapApiDetail,
   mapEpisode,
+  ensureContentType,
 };

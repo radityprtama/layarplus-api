@@ -3,7 +3,7 @@
 const httpClient = require('../lib/httpClient');
 const cache = require('../lib/cacheService');
 const { CACHE_TTL } = require('../config/env');
-const { mapApiItem } = require('../lib/scraper');
+const { mapApiItem, ensureContentType } = require('../lib/scraper');
 
 /**
  * "Trending Near You" — a Netflix-style mixed feed of geo-filtered movies AND
@@ -53,18 +53,8 @@ async function fetchResource(resource, country) {
   return Array.isArray(json.data) ? json.data : [];
 }
 
-/**
- * The `/api/series` resource omits the `contentType` field that `mapApiItem`
- * relies on to classify an item as a series. Tag it explicitly so the shared
- * mapper produces `type: 'series'` without us duplicating any mapping logic.
- *
- * @param {Object} item
- * @returns {Object}
- */
-function tagSeries(item) {
-  if (item && item.contentType) return item;
-  return { ...item, contentType: 'tv_series' };
-}
+// `ensureContentType` from scraper handles the upstream `/api/series`
+// contentType omission. Used directly below — no local wrapper needed.
 
 /**
  * Numeric popularity score for sorting. Falls back to 0 when absent so items
@@ -111,7 +101,7 @@ async function getNearYou(country) {
   }
 
   const movies = movieOk ? movieRes.value : [];
-  const series = (seriesOk ? seriesRes.value : []).map(tagSeries);
+  const series = (seriesOk ? seriesRes.value : []).map(i => ensureContentType(i));
 
   const items = [...movies, ...series]
     .sort((a, b) => popularityOf(b) - popularityOf(a))

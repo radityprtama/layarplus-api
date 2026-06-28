@@ -3,7 +3,7 @@
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
 const { CACHE_TTL } = require('../config/env');
-const { mapApiItem } = require('../lib/scraper');
+const { mapApiItem, ensureContentType } = require('../lib/scraper');
 
 /**
  * Fetch and parse featured movies from the upstream homepage.
@@ -130,10 +130,7 @@ async function fetchMixedTrending(limit) {
   if (!movieOk && !seriesOk) return [];
 
   const movies = movieOk ? movieRes.value : [];
-  const series = (seriesOk ? seriesRes.value : []).map(s => {
-    if (s && s.contentType) return s;
-    return { ...s, contentType: 'tv_series' };
-  });
+  const series = (seriesOk ? seriesRes.value : []).map(i => ensureContentType(i));
 
   return [...movies, ...series]
     .sort((a, b) => {

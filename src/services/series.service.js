@@ -3,7 +3,7 @@
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
 const { CACHE_TTL } = require('../config/env');
-const { mapApiItem, mapApiDetail, mapEpisode } = require('../lib/scraper');
+const { mapApiItem, mapApiDetail, mapEpisode, ensureContentType } = require('../lib/scraper');
 
 function fetchPage(resource, page, limit, sort) {
   return httpClient.getJson(`/api/${resource}?page=${page}&limit=${limit}&sort=${sort || 'createdAt'}`);
@@ -29,7 +29,7 @@ async function getBrowse(page, limit, sort) {
     if (cache.isHit(key, CACHE_TTL.page)) return cache.get(key);
 
     const data = await fetchPage('series', Number(page), resLimit, resSort);
-    const items = (data?.data || []).map(mapApiItem).filter(Boolean);
+    const items = (data?.data || []).map(i => ensureContentType(i)).map(mapApiItem).filter(Boolean);
     const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
 
     const result = {
@@ -54,7 +54,7 @@ async function getBrowse(page, limit, sort) {
 
   while (currentPage <= 100) {
     const data = await fetchPage('series', currentPage, resLimit, resSort);
-    const items = (data?.data || []).map(mapApiItem).filter(Boolean);
+    const items = (data?.data || []).map(i => ensureContentType(i)).map(mapApiItem).filter(Boolean);
 
     if (items.length === 0) break;
 

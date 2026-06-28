@@ -3,7 +3,7 @@
 const httpClient = require('../lib/httpClient');
 const cache = require('../lib/cacheService');
 const { CACHE_TTL } = require('../config/env');
-const { mapApiItem } = require('../lib/scraper');
+const { mapApiItem, ensureContentType } = require('../lib/scraper');
 
 function buildKey(parts) {
   return parts.filter(Boolean).join('.');
@@ -91,7 +91,7 @@ async function getCategoryBrowse(category, value, type, page = 1, limit) {
   const qs = `${category}=${value}&page=${page}&limit=${resLimit}&sort=createdAt`;
   
   const data = await httpClient.getJson(`${apiPath}?${qs}`);
-  const items = (data?.data || []).map(mapApiItem).filter(Boolean);
+  const items = (data?.data || []).map(i => ensureContentType(i, isSeries ? 'tv_series' : 'movie')).map(mapApiItem).filter(Boolean);
 
   cache.set(key, items);
   return items;
