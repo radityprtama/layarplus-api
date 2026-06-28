@@ -1,0 +1,184 @@
+'use strict';
+
+const httpClient = require('../lib/httpClient');
+const cache      = require('../lib/cacheService');
+const { CACHE_TTL } = require('../config/env');
+const { mapApiItem, mapApiDetail } = require('../lib/scraper');
+
+function fetchPage(resource, page, limit, sort) {
+  return httpClient.getJson(`/api/${resource}?page=${page}&limit=${limit}&sort=${sort || 'createdAt'}`);
+}
+
+/**
+ * Fetch series with optional pagination.
+ *
+ * When page is provided, returns only that page with pagination metadata.
+ * When page is omitted, aggregates ALL pages from the upstream (cached).
+ *
+ * @param {number}  [page]
+ * @param {number}  [limit=36]
+ * @param {string}  [sort='createdAt']
+ * @returns {Promise<{ items: Array, pagination: { currentPage, totalPages, hasNext } }>}
+ */
+async function getBrowse(page, limit, sort) {
+  const resLimit = Number(limit) || 36;
+  const resSort = sort || 'createdAt';
+
+  if (page != null) {
+    const key = `series.browse.p${page}.l${resLimit}.s${resSort}`;
+    if (cache.isHit(key, CACHE_TTL.page)) return cache.get(key);
+
+    const data = await fetchPage('series', Number(page), resLimit, resSort);
+    const items = (data?.data || []).map(mapApiItem).filter(Boolean);
+    const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
+
+    const result = {
+      items,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Number(upstreamPages),
+        hasNext: Number(page) < Number(upstreamPages),
+      },
+    };
+
+    cache.set(key, result);
+    return result;
+  }
+
+  const allKey = 'series.browse.all';
+  if (cache.isHit(allKey, CACHE_TTL.page)) return cache.get(allKey);
+
+  const allItems = [];
+  let currentPage = 1;
+  let totalPages = 1;
+
+  while (currentPage <= 100) {
+    const data = await fetchPage('series', currentPage, resLimit, resSort);
+    const items = (data?.data || []).map(mapApiItem).filter(Boolean);
+
+    if (items.length === 0) break;
+
+    allItems.push(...items);
+
+    if (data?.totalPages) {
+      totalPages = Number(data.totalPages);
+      if (currentPage >= totalPages) break;
+    } else if (data?.pagination?.totalPages) {
+      totalPages = Number(data.pagination.totalPages);
+      if (currentPage >= totalPages) break;
+    }
+
+    currentPage++;
+  }
+
+  const result = {
+    items: allItems,
+    pagination: { currentPage: 1, totalPages: 1, hasNext: false },
+  };
+
+  cache.set(allKey, result);
+  return result;
+}
+
+/**
+ * Fetch and parse trending TV series from the homepage.
+ * @returns {Promise<Array>}
+ */
+async function getTrending() {
+  const key = 'trending.tv';
+  if (cache.isHit(key, CACHE_TTL.trending)) return cache.get(key);
+
+  const data = await httpClient.getJson('/api/homepage');
+  if (!data || !data.above) return [];
+
+  const section = data.above.find(s => s.title && s.title.toLowerCase().includes('trending')) || data.above[0];
+  const items = (section?.data || []).map(mapApiItem).filter(i => i.type === 'series');
+  
+  cache.set(key, items);
+  return items;
+}
+
+
+/**
+ * Fetch a series detail page by slug.
+ * Returns rich metadata from the native JSON API.
+ *
+ * @param {string} slug - e.g. "the-last-of-us-2023"
+ * @returns {Promise<Object>}
+ */
+async function getDetail(slug) {
+  const key = `series.detail.${slug}`;
+  if (cache.isHit(key, CACHE_TTL.detail)) return cache.get(key);
+
+  const data = await httpClient.getJson(`/api/series/${slug}`);
+  const detail = mapApiDetail(data);
+
+  if (!detail.title) {
+    const err = new Error('Series not found');
+    err.status = 404;
+    throw err;
+  }
+
+  cache.set(key, detail);
+  return detail;
+}
+
+/**
+ * Fetch the stream data for a series episode: URL, subtitles, and metadata.
+ *
+ * Delegates to httpClient.getStreamData which runs the full API chain.
+ * Results are cached with a short TTL since stream URLs expire.
+ *
+ * @param {string} slug - e.g. "the-last-of-us-2023"
+ * @returns {Promise<{
+ *   streamUrl:   string | null,
+ *   subtitles:   Array<{ lang: string, label: string, url: string }>,
+ *   videoId:     string | null,
+ *   title:       string | null,
+ *   durationSec: number | null,
+ *   maxHeight:   number | null,
+ *   expiresAt:   number | null,
+ * }>}
+ */
+async function getStreamData(slug) {
+  const key = `series.stream.${slug}`;
+  if (cache.isHit(key, CACHE_TTL.stream)) return cache.get(key);
+
+  const result = await httpClient.getStreamData(slug, 'series');
+  if (result.streamUrl) cache.set(key, result);
+  return result;
+}
+
+/**
+ * Fetch stream data for a specific series episode.
+ *
+ * @param {string} slug    - e.g. "oasis-2026"
+ * @param {number} season  - Season number (1-based)
+ * @param {number} episode - Episode number (1-based)
+ * @returns {Promise<{
+ *   streamUrl:   string | null,
+ *   subtitles:   Array<{ lang: string, label: string, url: string }>,
+ *   videoId:     string | null,
+ *   title:       string | null,
+ *   durationSec: number | null,
+ *   maxHeight:   number | null,
+ *   expiresAt:   number | null,
+ * }>}
+ */
+async function getEpisodeStreamData(slug, season, episode) {
+  const key = `series.stream.${slug}.s${season}e${episode}`;
+  if (cache.isHit(key, CACHE_TTL.stream)) return cache.get(key);
+
+  const result = await httpClient.getEpisodeStreamData(slug, Number(season), Number(episode));
+  if (result.streamUrl) cache.set(key, result);
+  return result;
+}
+
+module.exports = {
+  getBrowse,
+  getTrending,
+
+  getDetail,
+  getStreamData,
+  getEpisodeStreamData,
+};

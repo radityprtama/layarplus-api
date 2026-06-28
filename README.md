@@ -1,0 +1,348 @@
+# LayarPlus API v3
+
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/annurdien/IDLIX-API/blob/main/LICENSE)
+
+A REST API that scrapes `https://z2.idlixku.com/` using **Puppeteer + stealth plugin** to bypass Cloudflare and extract all available content data.
+
+## Features
+
+- **Cloudflare Bypass (TLS Fingerprinting):** Persistent headless Chromium singleton to seamlessly mirror BoringSSL signatures and bypass strict 403 Forbidden Cloudflare blocks.
+- **Rich Stream Metadata:** Directly extracts the internal majorplay.net JSON configurations, including stream URLs, multi-language subtitle tracks, duration, and video IDs.
+- **Resilient JSON Scraping:** The API now directly maps the upstream's native JSON APIs (`/api/movies`, `/api/series`, etc.) to objects rather than using brittle Cheerio HTML parsing, resulting in **O(1) list mapping** and absolute layout resilience.
+- **Interactive API Documentation:** Powered by Scalar (OpenAPI 3.0.0), available at `/docs`.
+- **Complete Feature Set:** Full detail pages, search endpoints, leaderboard, and all category filters (Movies, TV Series, Genres, Countries, Years, Networks).
+- **Consistent Response Envelope:** Standardized `{ success, data, pagination, filters }` output format.
+- **In-memory TTL Cache:** Configurable caching for blisteringly fast responses.
+
+## Installation
+
+The easiest way to run the API is using Docker Compose. Since the Docker images are already published to the GitHub Container Registry, you don't even need to clone the repository!
+
+```bash
+# 1. Download the docker-compose.yml file
+curl -O https://raw.githubusercontent.com/annurdien/IDLIX-API/main/docker-compose.yml
+
+# 2. Spin up the API and the Stealth microservice
+docker compose up -d
+```
+
+The API will be available at `http://localhost:3000`.
+
+### Manual Installation
+
+If you prefer to run it without Docker:
+```bash
+npm install
+cp .env.example .env
+npm start
+```
+
+> **Requirements:** Node.js 20+ and a standalone instance of the [Stealth](https://github.com/annurdien/stealth) service running.
+
+---
+
+## API Reference
+
+**Base URL:** `http://localhost:3000/api`
+
+All responses follow the envelope:
+```json
+{
+  "success": true,
+  "data": [...],
+  "pagination": { "currentPage": 1, "totalPages": 5, "hasNext": true },
+  "filters": { "type": "movie", "genre": "action" }
+}
+```
+
+**List item fields (in addition to common fields):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | string | Media title |
+| `originalTitle` | string | Original title |
+| `year` | number/null | Release year |
+| `type` | string | `"movie"` or `"series"` |
+| `poster` | string/null | TMDB poster URL (w300) |
+| `backdrop` | string/null | TMDB backdrop URL (w1280) |
+| `logo` | string/null | TMDB logo/title treatment URL (w500) |
+| `slug` | string | URL-friendly identifier |
+| `rating` | number/null | Vote average |
+| `quality` | string/null | Video quality |
+
+**Detail item fields (in addition to common fields):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `runtime` | string/null | ISO 8601 duration |
+| `runtimeMinutes` | number/null | Duration in minutes |
+| `overview` | string/null | Plot summary |
+| `genres` | string[] | Genre names |
+| `country` | string/null | Production country |
+| `language` | string/null | Original language |
+| `logo` | string/null | TMDB logo/title treatment URL (w500) |
+| `backdrops` | string[]/null | Additional TMDB backdrop URLs (w1280) |
+| `director` | object/null | `{ name, url }` |
+| `cast` | array | Cast members with `{ name, character, image }` |
+| `trailer` | string/null | Trailer URL |
+| `watchUrl` | string | Watch page URL |
+| `streamUrl` | string/null | Stream URL (fetched separately) |
+| `keywords` | string[] | Keywords |
+| `seasons` | array/null | Season/episode data (series only) |
+
+---
+
+### General
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | API status |
+| GET | `/home` | All homepage content (flat array) |
+| GET | `/home/sections` | Homepage content grouped by section |
+| GET | `/featured` | Trending Now content |
+| GET | `/cinemaxxi` | Recently Added Movies |
+
+---
+
+### Search
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/search?q=batman` | Search movies & series |
+
+---
+
+### Leaderboard
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/leaderboard` | Top ranked content |
+
+---
+
+### Movies
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/movie` | Browse all movies |
+| GET | `/movie/trending` | Trending movies |
+| GET | `/movie/trending/:page` | Trending movies (page N) |
+| GET | `/movie/:slug` | Movie detail — full metadata |
+| GET | `/movie/:slug/stream` | Extract stream URL (Puppeteer) |
+
+**Example detail response:**
+```json
+{
+  "success": true,
+  "data": {
+    "title": "Per Aspera Ad Astra",
+    "year": 2026,
+    "type": "movie",
+    "runtime": "PT111M",
+    "runtimeMinutes": 111,
+    "overview": "...",
+    "poster": "https://image.tmdb.org/...",
+    "backdrop": "https://image.tmdb.org/...",
+    "genres": ["Drama", "Adventure", "Science Fiction"],
+    "country": "China",
+    "countryCode": "CN",
+    "language": "Chinese",
+    "director": { "name": "Han Yan", "url": "..." },
+    "cast": [{ "name": "Dylan Wang", "character": "Xu Tianbiao", "image": "..." }],
+    "trailer": "https://www.youtube.com/watch?v=...",
+    "watchUrl": "https://z2.idlixku.com/movie/per-aspera-ad-astra-2026?play=1",
+    "streamUrl": null,
+    "keywords": ["virtual reality", "dream realm"],
+    "recommendations": [...]
+  }
+}
+```
+
+---
+
+### TV Series
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/series` | Browse all series |
+| GET | `/series/trending` | Trending series |
+| GET | `/series/:slug` | Series detail — full metadata |
+| GET | `/series/:slug/season/:season/episode/:episode/stream` | Extract episode stream URL & subtitles |
+
+---
+
+### Genres
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/genre` | List all genres |
+| GET | `/genre/:genre` | Browse by genre (all types) |
+| GET | `/genre/:genre?type=movie` | Browse genre — movies only |
+| GET | `/genre/:genre?type=series` | Browse genre — series only |
+| GET | `/genre/movie/:genre` | Movies in genre |
+| GET | `/genre/series/:genre` | Series in genre |
+
+**Available genres:** `action`, `adventure`, `animation`, `anime`, `comedy`, `crime`, `drama`, `drama-korea`, `family`, `fantasy`, `history`, `horror`, `kids`, `mystery`, `science-fiction`, `thriller`, `war`
+
+---
+
+### Countries
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/country` | List all countries |
+| GET | `/country/:country` | Browse by country |
+| GET | `/country/:country?type=movie` | Filter movies only |
+| GET | `/country/:country?type=series` | Filter series only |
+
+---
+
+### Years
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/year` | List all years |
+| GET | `/year/:year` | Browse by year (e.g. `/year/2024`) |
+| GET | `/year/:year?type=movie` | Filter movies only |
+
+---
+
+### Networks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/network` | List all networks |
+| GET | `/network/netflix` | Netflix content |
+| GET | `/network/hbo` | HBO content |
+| GET | `/network/disney-plus` | Disney+ content |
+| GET | `/network/apple-tv-plus` | Apple TV+ content |
+| GET | `/network/amazon-prime-video` | Prime Video content |
+| GET | `/network/:network?type=series` | Filter by type |
+
+---
+
+### Trending (Location-Aware)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/trending/near-you` | Country-aware trending movies **and** TV series |
+
+The backend automatically detects the user's country and returns a Netflix-style
+**mixed feed of movies and TV series** for that country. It fetches two upstream
+resources **in parallel** and merges them:
+
+- `/api/movies?country={CC}&page=1&limit=36&sort=popularityScore`
+- `/api/series?country={CC}&page=1&limit=36&sort=popularityScore`
+
+The combined list is **re-sorted by `popularityScore` (descending)** — so movies
+and series interleave by popularity rather than being concatenated — and trimmed
+to the top results. Each item is classified via its `type` field (`"movie"` or
+`"series"`).
+
+**Resilient to partial upstream failure:** if only one of the two resources is
+reachable, its results are still returned; an error is raised only when **both**
+upstream requests fail.
+
+**Detection priority:**
+
+1. `CF-IPCountry` header (Cloudflare)
+2. `x-forwarded-for` header + `geoip-lite` lookup
+3. Fallback: `US`
+
+**Feature flag:** Set `ENABLE_GEO_TRENDING=false` to disable GeoIP detection (always returns `US`).
+
+**Example request:**
+```bash
+curl http://localhost:3000/api/trending/near-you
+```
+
+**Example response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "title": "The Last Frontier",
+      "slug": "the-last-frontier-2026",
+      "year": 2026,
+      "type": "series",
+      "quality": null,
+      "rating": 8.1,
+      "poster": "https://image.tmdb.org/...",
+      "link": {
+        "endpoint": "series/the-last-frontier-2026",
+        "url": "https://z2.idlixku.com/series/the-last-frontier-2026"
+      }
+    },
+    {
+      "title": "Contra",
+      "slug": "contra-2025",
+      "year": 2025,
+      "type": "movie",
+      "quality": "HD",
+      "rating": 7.2,
+      "poster": "https://image.tmdb.org/...",
+      "link": {
+        "endpoint": "movie/contra-2025",
+        "url": "https://z2.idlixku.com/movie/contra-2025"
+      }
+    }
+  ],
+  "meta": {
+    "country": "ID",
+    "detectedBy": "cf-header"
+  }
+}
+```
+
+> **Docker note:** When running locally without a reverse proxy (e.g., Cloudflare), the container's private IP (172.x.x.x) cannot be geo-located. The endpoint will fall back to `US`. Set the `CF-IPCountry` header or deploy behind Cloudflare for accurate country detection.
+
+---
+
+## Stream URL Extraction Architecture
+
+Unlike previous versions that relied on an internal bulky Puppeteer browser, the `/stream` endpoints now seamlessly proxy requests through an external **Stealth Go Microservice**.
+
+### How it Works
+
+Because Cloudflare instantly blocks standard Node.js `fetch()` requests due to a **TLS Fingerprint mismatch** (OpenSSL vs. Chromium's BoringSSL), the API routes protected requests to the Stealth service. The Stealth service maintains a persistent Chromium tab and executes requests using `page.evaluate(fetch())` or native HTTP mimicking, ensuring a perfect fingerprint.
+
+The extraction follows this sequence:
+1. **UUID Resolution:** Calls `/api/movies/{slug}` or `/api/series/{slug}/season/{season}` to retrieve internal Movie/Series/Episode UUIDs.
+2. **Analytics Tracking:** Pings `/api/views/track`.
+3. **Gate Token Generation:** Requests `/api/watch/play-info/` which returns a `gateToken` and an `unlockAt` timestamp.
+4. **Mandatory Delay:** The API honors the upstream's internal 15-second anti-scraping timer (`unlockAt - serverNow`). 
+5. **Session Claim:** Exchanges the unlocked `gateToken` for a JSON Web Token and a redemption URL.
+6. **Final Resolution:** Fires a blazing-fast, direct Node.js `fetch()` to `majorplay.net` (which lacks Cloudflare protection) to redeem the token and extract the final `.json` configuration containing `.m3u8` links and `.vtt` subtitles.
+
+**Example movie stream request:**
+```bash
+curl http://localhost:3000/api/movie/per-aspera-ad-astra-2026/stream
+```
+
+**Example series stream request:**
+```bash
+curl http://localhost:3000/api/series/oasis-2026/season/1/episode/1/stream
+```
+
+> **Note:** The very first request after an API restart might take a few seconds longer if the Stealth service needs to solve a JS challenge. Subsequent streams only suffer the mandatory 15-second API delay. Stream configurations are cached in-memory.
+
+---
+
+## Environment Variables
+
+See [`.env.example`](.env.example) for all available configuration options.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IDLIX_BASE_URL` | `https://z2.idlixku.com` | Upstream site URL |
+| `PORT` | `3000` | API server port |
+| `STEALTH_API_URL` | `http://localhost:8191` | URL of the Stealth service |
+| `CACHE_TTL_DETAIL` | `2` | Detail page cache (hours) |
+| `CACHE_TTL_STREAM` | `0.25` | Stream URL cache (hours = 15min) |
+| `CACHE_TTL_SEARCH` | `0.5` | Search cache (hours = 30min) |
+| `ENABLE_GEO_TRENDING` | `true` | Enable country-aware trending via GeoIP |
+
+---
+
+**Contribution are welcome**

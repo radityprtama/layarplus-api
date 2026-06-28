@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<body>
+<!-- sr-only section with homepage content -->
+<section class="sr-only" aria-label="IDLIX content catalog">
+  <h1>IDLIX — Nonton Film, Serial TV, Anime, Drama Korea Subtitle Bahasa</h1>
+  <p>Nonton atau Streaming Film, Serial TV, Anime atau Drama Korea dalam format HD dan terbaru.</p>
+  <div>
+    <h2>Trending Now</h2>
+    <ul>
+      <li><a href="/series/teach-you-a-lesson-2026">Teach You a Lesson</a></li>
+      <li><a href="/movie/salmokji-whispering-water-2026">Salmokji: Whispering Water</a></li>
+      <li><a href="/series/doctor-on-the-edge-2026">Doctor on the Edge</a></li>
+    </ul>
+  </div>
+  <div>
+    <h2>Recently Added Movies</h2>
+    <ul>
+      <li><a href="/movie/per-aspera-ad-astra-2026">Per Aspera Ad Astra</a></li>
+      <li><a href="/movie/your-fault-london-2026">Your Fault: London</a></li>
+    </ul>
+  </div>
+  <div>
+    <h2>Collections</h2>
+    <ul>
+      <li><a href="/series/wistoria-wand-and-sword-2024">Wistoria: Wand and Sword</a></li>
+      <li><a href="/movie/attack-on-titan-the-last-attack-2024">Attack on Titan: THE LAST ATTACK</a></li>
+    </ul>
+  </div>
+  <div>
+    <h2>Network Originals</h2>
+    <ul>
+      <li><a href="/series/servant-2019">Servant</a></li>
+      <li><a href="/series/the-buccaneers-2023">The Buccaneers</a></li>
+    </ul>
+  </div>
+</section>
+</body>
+</html>
