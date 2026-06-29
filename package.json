@@ -1,7 +1,7 @@
 {
   "name": "layarplus-api",
   "version": "3.0.0",
-  "description": "LayarPlus API — Scraper with stealth Cloudflare bypass",
+  "description": "LayarPlus API — Scraper with silentium Cloudflare bypass",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -19,7 +19,7 @@
     "scrapper",
     "async",
     "javascript",
-    "stealth"
+    "silentium"
   ],
   "author": "radityprtama",
   "license": "MIT",

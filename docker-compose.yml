@@ -1,7 +1,7 @@
 services:
-  stealth:
+  silentium:
     image: quay.io/radityprtama/silentium:latest
-    container_name: idlix-stealth
+    container_name: silentium
     ports:
       - "8191:8191"
     environment:
@@ -15,7 +15,7 @@ services:
       - "3001:3001"
     environment:
       - PORT=3001
-      - STEALTH_API_URL=http://stealth:8191
+      - SILENTIUM_API_URL=http://silentium:8191
     depends_on:
-      - stealth
+      - silentium
     restart: unless-stopped

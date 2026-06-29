@@ -8,7 +8,7 @@
 
 ## 1. Upstream Capabilities (z2.idlixku.com → majorplay.net)
 
-The backend does **not** call upstream directly — requests are tunneled through a "Stealth" Go microservice (`STEALTH_API_URL`) to defeat Cloudflare. The playback chain lives entirely in `src/lib/streamClient.js`:
+The backend does **not** call upstream directly — requests are tunneled through a "Silentium" Go microservice (`SILENTIUM_API_URL`) to defeat Cloudflare. The playback chain lives entirely in `src/lib/streamClient.js`:
 
 ```
 1. GET  /api/movies/{slug}                 → content UUID
@@ -34,7 +34,7 @@ The backend does **not** call upstream directly — requests are tunneled throug
 
 **Two fragility flags:**
 - Stream chain gates on `playInfo.kind === 'gate'` (`streamClient.js:284`), but a live log shows `kind=pentos` — possibly stale.
-- Every uncached stream depends on the external Stealth service **plus** an enforced ~15s anti-scrape delay (cache TTL 15 min).
+- Every uncached stream depends on the external Silentium service **plus** an enforced ~15s anti-scrape delay (cache TTL 15 min).
 
 ---
 

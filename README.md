@@ -30,7 +30,7 @@ The API is available at `http://localhost:3000`. Interactive API docs at [`http:
 
 | Feature | Description |
 |---------|-------------|
-| **Cloudflare Bypass** | External Stealth Go microservice handles TLS fingerprinting — no Puppeteer in the API process |
+| **Cloudflare Bypass** | External Silentium Go microservice handles TLS fingerprinting — no Puppeteer in the API process |
 | **Stream Extraction** | 6-step pipeline resolves gate tokens, enforces anti-scraping delays, and returns `.m3u8` + `.vtt` |
 | **Resilient JSON Mapping** | Direct upstream API mapping (`/api/movies`, `/api/series`) — no Cheerio HTML parsing |
 | **In-Memory TTL Cache** | Per-endpoint configurable caching (Map-based, L1; optional Redis L2) |
@@ -67,7 +67,7 @@ LayarPlus API (Express, port 3000)
   │
   ├── Upstream API (direct JSON: /api/movies, /api/series, /api/search)
   │
-  └── Stealth Microservice (port 8191)
+  └── Silentium Microservice (port 8191)
         │
         └── Puppeteer (headless Chromium)
               │
@@ -82,7 +82,7 @@ Stream extraction: UUID → gate token → 15s delay → session claim → .m3u8
 
 - **Node.js 20+** (for manual mode)
 - **Docker + Docker Compose** (recommended)
-- **Stealth microservice** — [`annurdien/stealth`](https://github.com/annurdien/stealth) (required for Cloudflare bypass)
+- **Silentium microservice** — [`radityprtama/silentium`](https://github.com/radityprtama/silentium) (required for Cloudflare bypass)
 
 ---
 
@@ -102,7 +102,7 @@ git clone https://github.com/radityprtama/layarplus-api.git
 cd layarplus-api
 npm install
 cp .env.example .env
-# Edit .env with your Stealth service URL
+# Edit .env with your Silentium service URL
 npm start
 ```
 
@@ -168,12 +168,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - STEALTH_API_URL=http://stealth:8191
+      - SILENTIUM_API_URL=http://silentium:8191
     depends_on:
-      - stealth
+      - silentium
 
-  stealth:
-    image: annurdien/stealth:latest
+  silentium:
+    image: radityprtama/silentium:latest
     ports:
       - "8191:8191"
 ```
@@ -188,7 +188,7 @@ All configurable via `.env` or direct environment variables.
 |----------|---------|-------------|
 | `IDLIX_BASE_URL` | `https://z2.idlixku.com` | Upstream site URL |
 | `PORT` | `3000` | API server port |
-| `STEALTH_API_URL` | `http://localhost:8191` | Stealth microservice URL |
+| `SILENTIUM_API_URL` | `http://localhost:8191` | Silentium microservice URL |
 | `CACHE_TTL_DETAIL` | `2` | Detail page cache TTL (hours) |
 | `CACHE_TTL_STREAM` | `0.25` | Stream URL cache TTL (hours) |
 | `CACHE_TTL_SEARCH` | `0.5` | Search cache TTL (hours) |
@@ -224,7 +224,7 @@ layarplus-api/
 │   │   ├── leaderboard.service.js
 │   │   └── geo.service.js
 │   ├── lib/
-│   │   ├── httpClient.js     # Upstream HTTP client with Stealth fallback
+│   │   ├── httpClient.js     # Upstream HTTP client with Silentium fallback
 │   │   ├── scraper.js        # JSON mapping helpers
 │   │   ├── cacheService.js   # TTL cache abstraction (L1)
 │   │   ├── streamClient.js   # Stream extraction logic
