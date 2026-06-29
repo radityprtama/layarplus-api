@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Minimal permissions — no write access needed for CI
+permissions:
+  contents: read
+
+# Cancel previous runs on the same branch to save resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ============================================================
+  # SYNTAX — validate Node.js syntax without running the app
+  # Fastest feedback loop: catches import errors, syntax issues
+  # ============================================================
+  syntax:
+    name: Syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Get npm cache directory
+        id: npm-cache-dir
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
+      - uses: actions/cache@v5
+        id: npm-cache
+        with:
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - run: npm ci
+      # node --check validates syntax without executing the file
+      # This catches require() errors, missing commas, etc.
+      - name: Validate syntax
+        run: |
+          find src server.js jest.config.js swagger.js -name '*.js' \
+            -exec node --check {} \; -print | grep -v "^$"
+
+  # ============================================================
+  # TEST — run unit + integration tests with coverage
+  # Depends on syntax passing to avoid wasting CI minutes
+  # ============================================================
+  test:
+    name: Tests
+    needs: syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Get npm cache directory
+        id: npm-cache-dir
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
+      - uses: actions/cache@v5
+        id: npm-cache
+        with:
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - run: npm ci
+      - name: Run tests with coverage
+        run: npm run test:coverage
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()   # Upload even on failure for debugging
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  # ============================================================
+  # DOCKER CHECK — verify the Docker image builds successfully
+  # Uses Docker Buildx with local cache; does NOT push
+  # ============================================================
+  docker-check:
+    name: Docker build check
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true            # Load into Docker daemon for testing
+          tags: layarplus-api:ci-${{ github.sha }}
+          cache-from: type=gha  # GitHub Actions cache
+          cache-to: type=gha,mode=max

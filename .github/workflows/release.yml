@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"               # Semver tags: v1.0.0, v2.3.4, etc.
+  release:
+    types: [published]          # Also trigger when a draft is published manually
+
+# Needed to create GitHub Releases and read repo contents
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  REGISTRY: quay.io
+  IMAGE_NAME: radityprtama/layarplus-api
+
+jobs:
+  release:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    steps:
+      # ==========================================================
+      # CHECKOUT
+      # Fetch full history for version info in OCI labels
+      # ==========================================================
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # Full history for git metadata
+          fetch-tags: true
+
+      # ==========================================================
+      # SET UP NODE — only used for optional pre-build validation
+      # ==========================================================
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Get npm cache directory
+        id: npm-cache-dir
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v5
+        id: npm-cache
+        with:
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - run: npm ci
+
+      # ==========================================================
+      # RUN TESTS before releasing — fail early if tests break
+      # ==========================================================
+      - name: Run tests
+        run: npm test
+
+      # ==========================================================
+      # VERIFY VERSION matches the git tag
+      # Prevents accidental mismatches between package.json and tag
+      # ==========================================================
+      - name: Verify version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"          # Strip leading "v"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "ERROR: Tag version (${TAG_VERSION}) != package.json version (${PKG_VERSION})"
+            exit 1
+          fi
+          echo "VERSION=${TAG_VERSION}" >> $GITHUB_ENV
+
+      # ==========================================================
+      # SET UP DOCKER BUILDX + QEMU for multi-platform builds
+      # ==========================================================
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # ==========================================================
+      # LOGIN TO QUAY.IO
+      # Credentials stored as GitHub secrets:
+      #   QUAY_USERNAME, QUAY_PASSWORD (or token)
+      # ==========================================================
+      - name: Log in to Quay.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      # ==========================================================
+      # EXTRACT OCI METADATA for labels and annotations
+      # ==========================================================
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+          flavor: |
+            latest=false
+
+      # ==========================================================
+      # BUILD & PUSH DOCKER IMAGE
+      # - Multi-platform: amd64 + arm64
+      # - Registry cache for fast rebuilds
+      # - SBOM + provenance attestations for supply-chain security
+      # ==========================================================
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Registry-based cache — shared across runners and CI runs
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+            type=gha
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          # Supply-chain attestations (SLSA + SBOM)
+          provenance: true
+          sbom: true
+          # Build-time metadata
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            BUILD_DATE=${{ github.event.repository.updated_at || github.repository_updated_at }}
+            COMMIT_SHA=${{ github.sha }}
+
+      # ==========================================================
+      # CREATE GITHUB RELEASE with auto-generated release notes
+      # Only runs on tag push events (not manual release publishes)
+      # ==========================================================
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          # SBOM is embedded in the OCI image manifest on Quay.io
+          # (generated automatically by sbom: true in the build step)
+          token: ${{ secrets.GITHUB_TOKEN }}

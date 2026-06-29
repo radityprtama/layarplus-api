@@ -1,96 +1,271 @@
-# LayarPlus API v3
+<p align="center">
+  <img src="https://shieldcn.dev/header/dots.svg?title=LayarPlus%20API&subtitle=A%20REST%20API%20for%20streaming%20content%20discovery%20with%20Cloudflare%20bypass&theme=zinc" alt="LayarPlus API" />
+</p>
 
-[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/radityprtama/layarplus-api/blob/main/LICENSE)
+<p align="center">
+  <a href="https://github.com/radityprtama/layarplus-api/blob/main/LICENSE"><img src="https://shieldcn.dev/github/license/radityprtama/layarplus-api.svg?split=true&size=xs" alt="License" /></a>
+  <a href="https://github.com/radityprtama/layarplus-api/releases"><img src="https://shieldcn.dev/github/release/radityprtama/layarplus-api.svg?split=true&size=xs" alt="Release" /></a>
+  <a href="https://github.com/radityprtama/layarplus-api/actions/workflows/ci.yml"><img src="https://shieldcn.dev/github/ci/radityprtama/layarplus-api.svg?workflow=CI&branch=main&split=true&size=xs" alt="CI" /></a>
+  <a href="https://github.com/radityprtama/layarplus-api/actions/workflows/codeql-analysis.yml"><img src="https://shieldcn.dev/github/ci/radityprtama/layarplus-api.svg?workflow=CodeQL&branch=main&label=CodeQL&split=true&size=xs" alt="CodeQL" /></a>
+  <a href="https://github.com/radityprtama/layarplus-api/stargazers"><img src="https://shieldcn.dev/github/stars/radityprtama/layarplus-api.svg?split=true&size=xs" alt="Stars" /></a>
+  <a href="https://quay.io/repository/radityprtama/layarplus-api"><img src="https://shieldcn.dev/badge/Docker-quay.io%2Fradityprtama%2Flayarplus-api-CC0000.svg?logo=docker&split=true&size=xs" alt="Quay.io" /></a>
+  <a href="https://github.com/radityprtama/layarplus-api"><img src="https://shieldcn.dev/badge/Node-20-339933.svg?logo=nodedotjs&split=true&size=xs" alt="Node" /></a>
+  <a href="https://github.com/radityprtama/layarplus-api/commits/main"><img src="https://shieldcn.dev/github/last-commit/radityprtama/layarplus-api.svg?split=true&size=xs" alt="Last Commit" /></a>
+</p>
 
-A REST API that scrapes `https://z2.idlixku.com/` using **Puppeteer + stealth plugin** to bypass Cloudflare and extract all available content data.
+---
 
-## Features
-
-- **Cloudflare Bypass (TLS Fingerprinting):** Persistent headless Chromium singleton to seamlessly mirror BoringSSL signatures and bypass strict 403 Forbidden Cloudflare blocks.
-- **Rich Stream Metadata:** Directly extracts the internal majorplay.net JSON configurations, including stream URLs, multi-language subtitle tracks, duration, and video IDs.
-- **Resilient JSON Scraping:** The API now directly maps the upstream's native JSON APIs (`/api/movies`, `/api/series`, etc.) to objects rather than using brittle Cheerio HTML parsing, resulting in **O(1) list mapping** and absolute layout resilience.
-- **Interactive API Documentation:** Powered by Scalar (OpenAPI 3.0.0), available at `/docs`.
-- **Complete Feature Set:** Full detail pages, search endpoints, leaderboard, and all category filters (Movies, TV Series, Genres, Countries, Years, Networks).
-- **Consistent Response Envelope:** Standardized `{ success, data, pagination, filters }` output format.
-- **In-memory TTL Cache:** Configurable caching for blisteringly fast responses.
-
-## Installation
-
-The easiest way to run the API is using Docker Compose. Since the Docker images are already published to the GitHub Container Registry, you don't even need to clone the repository!
+## Quick Start
 
 ```bash
-# 1. Download the docker-compose.yml file
 curl -O https://raw.githubusercontent.com/radityprtama/layarplus-api/main/docker-compose.yml
-
-# 2. Spin up the API and the Stealth microservice
 docker compose up -d
 ```
 
-The API will be available at `http://localhost:3000`.
+The API is available at `http://localhost:3000`. Interactive API docs at [`http://localhost:3000/docs`](http://localhost:3000/docs).
 
-### Manual Installation
+---
 
-If you prefer to run it without Docker:
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Cloudflare Bypass** | External Stealth Go microservice handles TLS fingerprinting — no Puppeteer in the API process |
+| **Stream Extraction** | 6-step pipeline resolves gate tokens, enforces anti-scraping delays, and returns `.m3u8` + `.vtt` |
+| **Resilient JSON Mapping** | Direct upstream API mapping (`/api/movies`, `/api/series`) — no Cheerio HTML parsing |
+| **In-Memory TTL Cache** | Per-endpoint configurable caching (Map-based, L1; optional Redis L2) |
+| **Location-Aware Trending** | GeoIP detection via `CF-IPCountry` header, `x-forwarded-for`, or fallback to `US` |
+| **Interactive API Docs** | OpenAPI 3.0.0 via Scalar at `/docs` |
+| **Consistent Response Envelope** | Standardized `{ success, data, pagination, filters }` across all endpoints |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Runtime** | Node.js 20+ |
+| **Framework** | Express 5 |
+| **Testing** | Jest + Supertest |
+| **Container** | Docker + Docker Compose |
+| **Registry** | Quay.io — `quay.io/radityprtama/layarplus-api` |
+| **CI/CD** | GitHub Actions (CI, Release, CodeQL) |
+| **Cache** | In-memory Map (L1), Upstash Redis (L2 — planned) |
+| **API Docs** | Scalar (OpenAPI 3.0.0 autogenerated) |
+
+---
+
+## Architecture
+
+```
+Client
+  │
+  ▼
+LayarPlus API (Express, port 3000)
+  │
+  ├── CacheService (L1: memory → L2: Redis)
+  │
+  ├── Upstream API (direct JSON: /api/movies, /api/series, /api/search)
+  │
+  └── Stealth Microservice (port 8191)
+        │
+        └── Puppeteer (headless Chromium)
+              │
+              └── Cloudflare-bypassed requests → majorplay.net
+
+Stream extraction: UUID → gate token → 15s delay → session claim → .m3u8
+```
+
+---
+
+## Prerequisites
+
+- **Node.js 20+** (for manual mode)
+- **Docker + Docker Compose** (recommended)
+- **Stealth microservice** — [`annurdien/stealth`](https://github.com/annurdien/stealth) (required for Cloudflare bypass)
+
+---
+
+## Installation
+
+### Docker (recommended)
+
 ```bash
+docker pull quay.io/radityprtama/layarplus-api:latest
+docker compose up -d
+```
+
+### Manual
+
+```bash
+git clone https://github.com/radityprtama/layarplus-api.git
+cd layarplus-api
 npm install
 cp .env.example .env
+# Edit .env with your Stealth service URL
 npm start
 ```
 
-> **Requirements:** Node.js 20+ and a standalone instance of the [Stealth](https://github.com/annurdien/stealth) service running.
-
 ---
 
-## API Reference
+## Configuration
 
-**Base URL:** `http://localhost:3000/api`
+Copy `.env.example` to `.env` and adjust:
 
-All responses follow the envelope:
-```json
-{
-  "success": true,
-  "data": [...],
-  "pagination": { "currentPage": 1, "totalPages": 5, "hasNext": true },
-  "filters": { "type": "movie", "genre": "action" }
-}
+```bash
+cp .env.example .env
 ```
 
-**List item fields (in addition to common fields):**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `title` | string | Media title |
-| `originalTitle` | string | Original title |
-| `year` | number/null | Release year |
-| `type` | string | `"movie"` or `"series"` |
-| `poster` | string/null | TMDB poster URL (w300) |
-| `backdrop` | string/null | TMDB backdrop URL (w1280) |
-| `logo` | string/null | TMDB logo/title treatment URL (w500) |
-| `slug` | string | URL-friendly identifier |
-| `rating` | number/null | Vote average |
-| `quality` | string/null | Video quality |
-
-**Detail item fields (in addition to common fields):**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `runtime` | string/null | ISO 8601 duration |
-| `runtimeMinutes` | number/null | Duration in minutes |
-| `overview` | string/null | Plot summary |
-| `genres` | string[] | Genre names |
-| `country` | string/null | Production country |
-| `language` | string/null | Original language |
-| `logo` | string/null | TMDB logo/title treatment URL (w500) |
-| `backdrops` | string[]/null | Additional TMDB backdrop URLs (w1280) |
-| `director` | object/null | `{ name, url }` |
-| `cast` | array | Cast members with `{ name, character, image }` |
-| `trailer` | string/null | Trailer URL |
-| `watchUrl` | string | Watch page URL |
-| `streamUrl` | string/null | Stream URL (fetched separately) |
-| `keywords` | string[] | Keywords |
-| `seasons` | array/null | Season/episode data (series only) |
+See [Environment Variables](#environment-variables) for all options.
 
 ---
+
+## Running the Project
+
+```bash
+# Production
+npm start
+
+# Development with auto-reload
+npm run dev
+```
+
+The server listens on `http://localhost:3000`.
+
+---
+
+## Development
+
+```bash
+npm run dev           # Nodemon auto-reload
+npm test              # Run tests
+npm run test:coverage # With coverage report
+npm run docs:gen      # Regenerate OpenAPI spec
+```
+
+---
+
+## Docker
+
+### Build
+
+```bash
+docker build -t layarplus-api .
+```
+
+### Multi-platform build
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t quay.io/radityprtama/layarplus-api:latest .
+```
+
+### Docker Compose
+
+```yaml
+services:
+  api:
+    image: quay.io/radityprtama/layarplus-api:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - STEALTH_API_URL=http://stealth:8191
+    depends_on:
+      - stealth
+
+  stealth:
+    image: annurdien/stealth:latest
+    ports:
+      - "8191:8191"
+```
+
+---
+
+## Environment Variables
+
+All configurable via `.env` or direct environment variables.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IDLIX_BASE_URL` | `https://z2.idlixku.com` | Upstream site URL |
+| `PORT` | `3000` | API server port |
+| `STEALTH_API_URL` | `http://localhost:8191` | Stealth microservice URL |
+| `CACHE_TTL_DETAIL` | `2` | Detail page cache TTL (hours) |
+| `CACHE_TTL_STREAM` | `0.25` | Stream URL cache TTL (hours) |
+| `CACHE_TTL_SEARCH` | `0.5` | Search cache TTL (hours) |
+| `ENABLE_GEO_TRENDING` | `true` | Enable GeoIP location-aware trending |
+| `REDIS_ENABLED` | `false` | Enable Upstash Redis L2 cache (planned) |
+
+---
+
+## Project Structure
+
+```text
+layarplus-api/
+├── server.js                 # Entry point
+├── src/
+│   ├── app.js                # Express app setup, middleware, routes
+│   ├── config/
+│   │   └── env.js            # Centralised runtime configuration
+│   ├── controllers/          # Request handlers
+│   │   ├── movie.controller.js
+│   │   ├── series.controller.js
+│   │   ├── search.controller.js
+│   │   ├── homepage.controller.js
+│   │   ├── category.controller.js
+│   │   ├── trending.controller.js
+│   │   └── leaderboard.controller.js
+│   ├── services/             # Business logic
+│   │   ├── movie.service.js
+│   │   ├── series.service.js
+│   │   ├── search.service.js
+│   │   ├── homepage.service.js
+│   │   ├── catalog.service.js
+│   │   ├── trending.service.js
+│   │   ├── leaderboard.service.js
+│   │   └── geo.service.js
+│   ├── lib/
+│   │   ├── httpClient.js     # Upstream HTTP client with Stealth fallback
+│   │   ├── scraper.js        # JSON mapping helpers
+│   │   ├── cacheService.js   # TTL cache abstraction (L1)
+│   │   ├── streamClient.js   # Stream extraction logic
+│   │   ├── responseHelper.js # Response envelope formatting
+│   │   └── cfBypass/         # Cloudflare cookie harvesting
+│   ├── middleware/
+│   │   ├── validate.js       # Request validation
+│   │   └── errorHandler.js   # Global error handler
+│   └── routes/               # Route definitions
+│       ├── index.js
+│       ├── movie.routes.js
+│       ├── series.routes.js
+│       ├── search.routes.js
+│       ├── general.routes.js
+│       ├── category.routes.js
+│       ├── trending.routes.js
+│       └── leaderboard.routes.js
+├── tests/
+│   ├── integration/          # API integration tests
+│   │   ├── movie.test.js
+│   │   ├── series.test.js
+│   │   ├── search.test.js
+│   │   ├── homepage.test.js
+│   │   ├── catalog.test.js
+│   │   ├── genre.test.js
+│   │   └── trending.test.js
+│   └── fixtures/             # Test fixtures
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── jest.config.js
+└── swagger.js                # OpenAPI spec generator
+```
+
+---
+
+## API Documentation
+
+Interactive docs available at [`http://localhost:3000/docs`](http://localhost:3000/docs) (OpenAPI 3.0.0 via Scalar).
+
+**Base URL:** `http://localhost:3000/api`
 
 ### General
 
@@ -98,251 +273,182 @@ All responses follow the envelope:
 |--------|----------|-------------|
 | GET | `/` | API status |
 | GET | `/home` | All homepage content (flat array) |
-| GET | `/home/sections` | Homepage content grouped by section |
-| GET | `/featured` | Trending Now content |
-| GET | `/cinemaxxi` | Recently Added Movies |
-
----
+| GET | `/home/sections` | Homepage grouped by section |
+| GET | `/featured` | Trending now |
+| GET | `/cinemaxxi` | Recently added |
 
 ### Search
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/search?q=batman` | Search movies & series |
-
----
-
-### Leaderboard
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/leaderboard` | Top ranked content |
-
----
+| GET | `/search?q={query}` | Search movies & series |
 
 ### Movies
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/movie` | Browse all movies |
+| GET | `/movie?page=&limit=&sort=` | Browse movies (paginated) |
 | GET | `/movie/trending` | Trending movies |
-| GET | `/movie/trending/:page` | Trending movies (page N) |
-| GET | `/movie/:slug` | Movie detail — full metadata |
-| GET | `/movie/:slug/stream` | Extract stream URL (Puppeteer) |
-
-**Example detail response:**
-```json
-{
-  "success": true,
-  "data": {
-    "title": "Per Aspera Ad Astra",
-    "year": 2026,
-    "type": "movie",
-    "runtime": "PT111M",
-    "runtimeMinutes": 111,
-    "overview": "...",
-    "poster": "https://image.tmdb.org/...",
-    "backdrop": "https://image.tmdb.org/...",
-    "genres": ["Drama", "Adventure", "Science Fiction"],
-    "country": "China",
-    "countryCode": "CN",
-    "language": "Chinese",
-    "director": { "name": "Han Yan", "url": "..." },
-    "cast": [{ "name": "Dylan Wang", "character": "Xu Tianbiao", "image": "..." }],
-    "trailer": "https://www.youtube.com/watch?v=...",
-    "watchUrl": "https://z2.idlixku.com/movie/per-aspera-ad-astra-2026?play=1",
-    "streamUrl": null,
-    "keywords": ["virtual reality", "dream realm"],
-    "recommendations": [...]
-  }
-}
-```
-
----
+| GET | `/movie/trending/:page` | Trending by page |
+| GET | `/movie/:slug` | Movie detail |
+| GET | `/movie/:slug/stream` | Stream URL + subtitles |
 
 ### TV Series
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/series` | Browse all series |
+| GET | `/series?page=&limit=&sort=` | Browse series (paginated) |
 | GET | `/series/trending` | Trending series |
-| GET | `/series/:slug` | Series detail — full metadata |
-| GET | `/series/:slug/season/:season/episode/:episode/stream` | Extract episode stream URL & subtitles |
+| GET | `/series/:slug` | Series detail |
+| GET | `/series/:slug/season/:season/episode/:episode/stream` | Stream URL + subtitles |
 
----
+### Browse by Category
 
-### Genres
+| Method | Endpoint |
+|--------|----------|
+| GET | `/genre` |
+| GET | `/genre/:genre?type=movie\|series` |
+| GET | `/country` |
+| GET | `/country/:country?type=movie\|series` |
+| GET | `/year` |
+| GET | `/year/:year` |
+| GET | `/network` |
+| GET | `/network/:network?type=series` |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/genre` | List all genres |
-| GET | `/genre/:genre` | Browse by genre (all types) |
-| GET | `/genre/:genre?type=movie` | Browse genre — movies only |
-| GET | `/genre/:genre?type=series` | Browse genre — series only |
-| GET | `/genre/movie/:genre` | Movies in genre |
-| GET | `/genre/series/:genre` | Series in genre |
-
-**Available genres:** `action`, `adventure`, `animation`, `anime`, `comedy`, `crime`, `drama`, `drama-korea`, `family`, `fantasy`, `history`, `horror`, `kids`, `mystery`, `science-fiction`, `thriller`, `war`
-
----
-
-### Countries
+### Trending
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/country` | List all countries |
-| GET | `/country/:country` | Browse by country |
-| GET | `/country/:country?type=movie` | Filter movies only |
-| GET | `/country/:country?type=series` | Filter series only |
+| GET | `/trending/near-you` | Country-aware trending (movies + series, merged by score) |
 
----
+### Leaderboard
 
-### Years
+| Method | Endpoint |
+|--------|----------|
+| GET | `/leaderboard` |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/year` | List all years |
-| GET | `/year/:year` | Browse by year (e.g. `/year/2024`) |
-| GET | `/year/:year?type=movie` | Filter movies only |
+<details>
+<summary><b>Response Format</b></summary>
 
----
-
-### Networks
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/network` | List all networks |
-| GET | `/network/netflix` | Netflix content |
-| GET | `/network/hbo` | HBO content |
-| GET | `/network/disney-plus` | Disney+ content |
-| GET | `/network/apple-tv-plus` | Apple TV+ content |
-| GET | `/network/amazon-prime-video` | Prime Video content |
-| GET | `/network/:network?type=series` | Filter by type |
-
----
-
-### Trending (Location-Aware)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/trending/near-you` | Country-aware trending movies **and** TV series |
-
-The backend automatically detects the user's country and returns a Netflix-style
-**mixed feed of movies and TV series** for that country. It fetches two upstream
-resources **in parallel** and merges them:
-
-- `/api/movies?country={CC}&page=1&limit=36&sort=popularityScore`
-- `/api/series?country={CC}&page=1&limit=36&sort=popularityScore`
-
-The combined list is **re-sorted by `popularityScore` (descending)** — so movies
-and series interleave by popularity rather than being concatenated — and trimmed
-to the top results. Each item is classified via its `type` field (`"movie"` or
-`"series"`).
-
-**Resilient to partial upstream failure:** if only one of the two resources is
-reachable, its results are still returned; an error is raised only when **both**
-upstream requests fail.
-
-**Detection priority:**
-
-1. `CF-IPCountry` header (Cloudflare)
-2. `x-forwarded-for` header + `geoip-lite` lookup
-3. Fallback: `US`
-
-**Feature flag:** Set `ENABLE_GEO_TRENDING=false` to disable GeoIP detection (always returns `US`).
-
-**Example request:**
-```bash
-curl http://localhost:3000/api/trending/near-you
-```
-
-**Example response:**
 ```json
 {
   "success": true,
-  "data": [
-    {
-      "title": "The Last Frontier",
-      "slug": "the-last-frontier-2026",
-      "year": 2026,
-      "type": "series",
-      "quality": null,
-      "rating": 8.1,
-      "poster": "https://image.tmdb.org/...",
-      "link": {
-        "endpoint": "series/the-last-frontier-2026",
-        "url": "https://z2.idlixku.com/series/the-last-frontier-2026"
-      }
-    },
-    {
-      "title": "Contra",
-      "slug": "contra-2025",
-      "year": 2025,
-      "type": "movie",
-      "quality": "HD",
-      "rating": 7.2,
-      "poster": "https://image.tmdb.org/...",
-      "link": {
-        "endpoint": "movie/contra-2025",
-        "url": "https://z2.idlixku.com/movie/contra-2025"
-      }
-    }
-  ],
-  "meta": {
-    "country": "ID",
-    "detectedBy": "cf-header"
+  "data": [ ... ],
+  "pagination": {
+    "currentPage": 1,
+    "totalPages": 5,
+    "hasNext": true
+  },
+  "filters": {
+    "type": "movie",
+    "genre": "action"
   }
 }
 ```
 
-> **Docker note:** When running locally without a reverse proxy (e.g., Cloudflare), the container's private IP (172.x.x.x) cannot be geo-located. The endpoint will fall back to `US`. Set the `CF-IPCountry` header or deploy behind Cloudflare for accurate country detection.
+**List fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | string | Media title |
+| `originalTitle` | string | Original title |
+| `year` | number/null | Release year |
+| `type` | string | `"movie"` or `"series"` |
+| `poster` | string/null | TMDB poster (w300) |
+| `backdrop` | string/null | TMDB backdrop (w1280) |
+| `logo` | string/null | TMDB logo/title treatment (w500) |
+| `slug` | string | URL identifier |
+| `rating` | number/null | Vote average |
+| `quality` | string/null | Video quality |
+
+**Detail fields (adds to list fields):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `runtime` | string/null | ISO 8601 duration |
+| `runtimeMinutes` | number/null | Minutes |
+| `overview` | string/null | Plot |
+| `genres` | string[] | Genre names |
+| `country` | string/null | Country |
+| `language` | string/null | Language |
+| `backdrops` | string[]/null | TMDB backdrops (w1280) |
+| `director` | object/null | `{ name, url }` |
+| `cast` | array | `{ name, character, image }` |
+| `trailer` | string/null | YouTube URL |
+| `watchUrl` | string | Watch page |
+| `streamUrl` | string/null | Stream (separate endpoint) |
+| `keywords` | string[] | Keywords |
+| `seasons` | array/null | Episode data (series only) |
+</details>
 
 ---
 
-## Stream URL Extraction Architecture
+## Testing
 
-Unlike previous versions that relied on an internal bulky Puppeteer browser, the `/stream` endpoints now seamlessly proxy requests through an external **Stealth Go Microservice**.
-
-### How it Works
-
-Because Cloudflare instantly blocks standard Node.js `fetch()` requests due to a **TLS Fingerprint mismatch** (OpenSSL vs. Chromium's BoringSSL), the API routes protected requests to the Stealth service. The Stealth service maintains a persistent Chromium tab and executes requests using `page.evaluate(fetch())` or native HTTP mimicking, ensuring a perfect fingerprint.
-
-The extraction follows this sequence:
-1. **UUID Resolution:** Calls `/api/movies/{slug}` or `/api/series/{slug}/season/{season}` to retrieve internal Movie/Series/Episode UUIDs.
-2. **Analytics Tracking:** Pings `/api/views/track`.
-3. **Gate Token Generation:** Requests `/api/watch/play-info/` which returns a `gateToken` and an `unlockAt` timestamp.
-4. **Mandatory Delay:** The API honors the upstream's internal 15-second anti-scraping timer (`unlockAt - serverNow`). 
-5. **Session Claim:** Exchanges the unlocked `gateToken` for a JSON Web Token and a redemption URL.
-6. **Final Resolution:** Fires a blazing-fast, direct Node.js `fetch()` to `majorplay.net` (which lacks Cloudflare protection) to redeem the token and extract the final `.json` configuration containing `.m3u8` links and `.vtt` subtitles.
-
-**Example movie stream request:**
 ```bash
-curl http://localhost:3000/api/movie/per-aspera-ad-astra-2026/stream
+npm test                # Run all tests
+npm run test:coverage   # With coverage report
+npm run test:watch      # Watch mode
 ```
 
-**Example series stream request:**
-```bash
-curl http://localhost:3000/api/series/oasis-2026/season/1/episode/1/stream
+Tests are located in `tests/integration/` and use Jest + Supertest against the running API.
+
+---
+
+## CI/CD
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [CI](.github/workflows/ci.yml) | PR + push to `main`/`develop` | Syntax check, tests, Docker build verification |
+| [Release](.github/workflows/release.yml) | Git tag `v*.*.*` or release published | Build multi-platform image, push to Quay.io, create GitHub Release |
+| [CodeQL](.github/workflows/codeql-analysis.yml) | PR + push to `main` + schedule | Static security analysis |
+
+### CI Pipeline
+
+```
+Syntax check → Tests (with coverage) → Docker build check
 ```
 
-> **Note:** The very first request after an API restart might take a few seconds longer if the Stealth service needs to solve a JS challenge. Subsequent streams only suffer the mandatory 15-second API delay. Stream configurations are cached in-memory.
+### Release Pipeline
+
+```
+Tests → Version verification → Build multi-platform image (amd64 + arm64)
+  → Push to Quay.io (semver + latest tags) → Create GitHub Release
+
+Attestations: SLSA Provenance + SPDX SBOM
+Cache: Registry-based (shared across runners)
+```
 
 ---
 
-## Environment Variables
+## Security
 
-See [`.env.example`](.env.example) for all available configuration options.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `IDLIX_BASE_URL` | `https://z2.idlixku.com` | Upstream site URL |
-| `PORT` | `3000` | API server port |
-| `STEALTH_API_URL` | `http://localhost:8191` | URL of the Stealth service |
-| `CACHE_TTL_DETAIL` | `2` | Detail page cache (hours) |
-| `CACHE_TTL_STREAM` | `0.25` | Stream URL cache (hours = 15min) |
-| `CACHE_TTL_SEARCH` | `0.5` | Search cache (hours = 30min) |
-| `ENABLE_GEO_TRENDING` | `true` | Enable country-aware trending via GeoIP |
+- **Environment variables** for all secrets — never hardcoded
+- **CodeQL analysis** runs on every PR and push to `main`
+- **Minimal CI permissions** — `contents: read` by default, escalated only when needed
+- **Dependency scanning** via Dependabot (configured in GitHub)
+- **Supply-chain attestations** — Docker images include SLSA provenance and SBOM
+- **Input validation** middleware on all endpoints
 
 ---
 
-**Contribution are welcome**
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Commit your changes (`git commit -am 'feat: add my feature'`)
+4. Push to the branch (`git push origin feat/my-feature`)
+5. Open a Pull Request
+
+```bash
+npm test          # Ensure tests pass
+npm run lint      # Lint if configured
+```
+
+PRs are welcome. Open an issue first for significant changes.
+
+---
+
+## License
+
+[MIT](LICENSE) &mdash; &copy; 2025 Raditya Pratama
