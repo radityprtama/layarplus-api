@@ -15,7 +15,7 @@ services:
       - "3001:3001"
     environment:
       - PORT=3001
-      - SILENTIUM_API_URL=http://silentium:8191
+      - STEALTH_API_URL=http://silentium:8191
     depends_on:
       - silentium
     restart: unless-stopped
