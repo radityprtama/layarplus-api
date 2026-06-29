@@ -1,4 +1,12 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: layarplus-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+
   silentium:
     image: quay.io/radityprtama/silentium:latest
     container_name: silentium
@@ -16,6 +24,9 @@ services:
     environment:
       - PORT=3001
       - STEALTH_API_URL=http://silentium:8191
+      - CACHE_BACKEND=redis
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - silentium
+      - redis
     restart: unless-stopped

@@ -2,6 +2,7 @@
 
 const { CacheService } = require('../../src/lib/cacheService');
 const { effectiveStreamTtlMs } = require('../../src/lib/streamTtl');
+const { createRedisStub } = require('../fixtures/redisStub');
 
 describe('CacheService', () => {
   /** @type {CacheService} */
@@ -324,6 +325,114 @@ describe('CacheService', () => {
       expect(cache._inFlight.has('k')).toBe(false);
       // Resolving the dangling promise after clear must not crash.
       resolveFetch('late');
+    });
+  });
+
+  // ── two-tier (L2 Redis) mode ──────────────────────────────────────────────
+
+  describe('with an injected L2 (Redis stub)', () => {
+    /** @type {CacheService} */
+    let tier2Cache;
+    /** @type {ReturnType<typeof createRedisStub>} */
+    let l2;
+
+    beforeEach(() => {
+      l2 = createRedisStub();
+      tier2Cache = new CacheService(0, l2); // 0 = no eviction timer (faster tests)
+    });
+
+    afterEach(() => {
+      tier2Cache._cleanupTimer && clearInterval(tier2Cache._cleanupTimer);
+    });
+
+    it('writes the value to both L1 and L2 on set', async () => {
+      // L2 writes only happen when a per-entry ttlMs is supplied.
+      tier2Cache.set('k', { hello: 'world' }, { ttlMs: 3600_000 });
+      expect(tier2Cache.get('k')).toEqual({ hello: 'world' });
+      const l2Value = await l2.get('idlc:k');
+      expect(l2Value).toBe(JSON.stringify({ hello: 'world' }));
+    });
+
+    it('uses opts.ttlMs as the L2 TTL (in seconds, ceiling)', async () => {
+      tier2Cache.set('k', 'v', { ttlMs: 1500 });
+      const setOps = l2._operations.filter(o => o.op === 'set');
+      expect(setOps).toHaveLength(1);
+      expect(setOps[0].ttlSeconds).toBe(2); // 1500ms → ceil(1.5) → 2s
+    });
+
+    it('readThrough promotes an L2 hit into L1', async () => {
+      // Seed L2 directly with a value (simulating a different instance having
+      // written it).
+      await l2.set('idlc:k', JSON.stringify({ from: 'L2' }), 'EX', 60);
+
+      const fetcher = jest.fn();
+      const result = await tier2Cache.readThrough('k', 1, null, fetcher);
+      expect(result).toEqual({ from: 'L2' });
+      expect(fetcher).not.toHaveBeenCalled();
+      // L1 was warmed by the L2 hit.
+      expect(tier2Cache.get('k')).toEqual({ from: 'L2' });
+    });
+
+    it('readThrough skips L2 entirely when the L2 client is null', async () => {
+      const memoryOnly = new CacheService(0, null);
+      // Force the singleton into L1-miss / fetcher path.
+      const fetcher = jest.fn().mockResolvedValue('memory');
+      const result = await memoryOnly.readThrough('k', 1, null, fetcher);
+      expect(result).toBe('memory');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    });
+
+    it('readThrough falls through to fetcher when L2 returns null', async () => {
+      const fetcher = jest.fn().mockResolvedValue({ fresh: true });
+      const result = await tier2Cache.readThrough('k', 1, null, fetcher);
+      expect(result).toEqual({ fresh: true });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    });
+
+    it('readThrough does not write L2 when fetcher returns null', async () => {
+      const fetcher = jest.fn().mockResolvedValue(null);
+      await tier2Cache.readThrough('k', 1, null, fetcher);
+      const setOps = l2._operations.filter(o => o.op === 'set');
+      expect(setOps).toHaveLength(0);
+    });
+
+    it('L2 lookup error falls back to L1 (does not throw)', async () => {
+      // Stub get() to reject.
+      l2.get = () => Promise.reject(new Error('redis down'));
+      const fetcher = jest.fn().mockResolvedValue('fell-back');
+      const result = await tier2Cache.readThrough('k', 1, null, fetcher);
+      expect(result).toBe('fell-back');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    });
+
+    it('concurrent misses coalesce into a single L2 lookup', async () => {
+      // Stub get to count invocations.
+      let getCalls = 0;
+      const realGet = l2.get.bind(l2);
+      l2.get = (key) => { getCalls += 1; return realGet(key); };
+
+      const p1 = tier2Cache.readThrough('shared', 1, null, () => Promise.resolve('X'));
+      const p2 = tier2Cache.readThrough('shared', 1, null, () => Promise.resolve('X'));
+      const p3 = tier2Cache.readThrough('shared', 1, null, () => Promise.resolve('X'));
+      const results = await Promise.all([p1, p2, p3]);
+      expect(results).toEqual(['X', 'X', 'X']);
+      // All three callers share the leader's L2 round-trip.
+      expect(getCalls).toBe(1);
+    });
+
+    it('clear() also drops L2 entries under the configured prefix', async () => {
+      // Seed a few keys (ttlMs required for L2 write-through).
+      tier2Cache.set('alpha', 1, { ttlMs: 3600_000 });
+      tier2Cache.set('beta', 2, { ttlMs: 3600_000 });
+      // Sanity: present in L2.
+      expect(await l2.get('idlc:alpha')).toBe('1');
+      expect(await l2.get('idlc:beta')).toBe('2');
+
+      tier2Cache.clear();
+      // Wait for the async SCAN+DEL to settle.
+      await new Promise(r => setImmediate(r));
+      expect(await l2.get('idlc:alpha')).toBeNull();
+      expect(await l2.get('idlc:beta')).toBeNull();
     });
   });
 });

@@ -11,6 +11,7 @@
  */
 
 const counters = new Map();
+const l2Counters = new Map();
 
 function ensure(category) {
   let c = counters.get(category);
@@ -21,9 +22,28 @@ function ensure(category) {
   return c;
 }
 
+function ensureL2(category) {
+  let c = l2Counters.get(category);
+  if (!c) {
+    c = { hits: 0, misses: 0 };
+    l2Counters.set(category, c);
+  }
+  return c;
+}
+
 function recordHit(category) {
   if (!category) return;
   ensure(category).hits++;
+}
+
+function recordL2Hit(category) {
+  if (!category) return;
+  ensureL2(category).hits++;
+}
+
+function recordL2Miss(category) {
+  if (!category) return;
+  ensureL2(category).misses++;
 }
 
 function recordMiss(category, latencyMs) {
@@ -47,6 +67,7 @@ async function fetch(category, fn) {
 function getStats() {
   const out = {};
   for (const [category, c] of counters) {
+    const l2 = l2Counters.get(category) || { hits: 0, misses: 0 };
     const total = c.hits + c.misses;
     out[category] = {
       hits: c.hits,
@@ -54,6 +75,8 @@ function getStats() {
       total,
       hitRate: total > 0 ? c.hits / total : 0,
       avgMissLatencyMs: c.misses > 0 ? c.totalMissLatencyMs / c.misses : 0,
+      l2Hits: l2.hits,
+      l2Misses: l2.misses,
     };
   }
   return out;
@@ -71,6 +94,7 @@ function startPeriodicLog(intervalMs = 300_000) {
 
 function _reset() {
   counters.clear();
+  l2Counters.clear();
   if (logTimer) {
     clearInterval(logTimer);
     logTimer = null;
@@ -79,6 +103,8 @@ function _reset() {
 
 module.exports = {
   recordHit,
+  recordL2Hit,
+  recordL2Miss,
   recordMiss,
   fetch,
   getStats,

@@ -1,34 +1,43 @@
 'use strict';
 
 const metrics = require('./metrics');
+const redis = require('./redis');
+const { CACHE_BACKEND, REDIS_KEY_PREFIX } = require('../config/env');
 
 /**
- * Simple in-memory TTL cache backed by a Map.
- * Replaces the quick.db dependency — no SQLite file required.
- * The CacheService class is exported for unit testing; the singleton
- * instance is the default export consumed by services.
+ * Two-tier cache: in-process Map (L1) + optional Redis (L2).
  *
- * Stale entries are purged periodically to prevent unbounded Map growth.
+ * Phase 1 left a single-tier in-process TTL cache. Phase 3 adds the Redis
+ * L2 — same key shapes, same TTL semantics, plus an L1 promotion so a
+ * Redis hit warms the local Map. The in-process single-flight stays in
+ * L1; per-process coalescing is not replaced by Redis (it cannot be
+ * without slowing the cold path).
  *
- * Entries may optionally carry an `absoluteExpiryMs` (set via
- * `set(key, data, { ttlMs })`). When present, `isHit` checks the absolute
- * expiry instead of the caller-supplied `ttlHours`. This lets cache
- * writers express "never serve this past upstream X" without relying on
- * the caller passing the same TTL to both `isHit` and `set`.
+ * Behavior by CACHE_BACKEND:
+ *   - 'memory' (default): original Phase 1 behavior — in-process only.
+ *   - 'redis'           : L1 + L2. L2 client constructed lazily in
+ *                         `redis.js`; if Redis is unreachable, all reads
+ *                         serve from L1 and writes to L2 fail silently.
+ *
+ * Per the audit, failing closed on a Redis blip would defeat the purpose.
+ * The wrapper therefore swallows all L2 errors and logs them.
  */
 class CacheService {
   /**
-   * @param {number} [cleanupIntervalMs=300_000]  How often to purge stale entries (5 min default).
-   *                                               Set to 0 to disable periodic cleanup.
+   * @param {number}                       [cleanupIntervalMs=300_000]  How often to purge stale L1 entries (5 min default).
+   *                                                              Set to 0 to disable periodic cleanup.
+   * @param {object|null}                  [redisClient=null]         Override Redis client (mostly for tests).
+   *                                                              When null, the wrapper pulls from `redis.getClient()`.
    */
-  constructor(cleanupIntervalMs) {
+  constructor(cleanupIntervalMs, redisClient = null) {
     /** @type {Map<string, {data: *, timestamp: number, absoluteExpiryMs?: number}>} */
     this._store = new Map();
     /** @type {Map<string, Promise<*>>} In-flight fetches awaiting completion. */
     this._inFlight = new Map();
+    this._l2 = redisClient; // null = L2 disabled (memory mode or no injection)
 
     // ponytail: periodic eviction prevents unbounded Map growth.
-    // For Redis L2, this will be replaced by Redis TTL.
+    // For Redis L2, TTL is enforced server-side — no equivalent needed.
     if (cleanupIntervalMs !== 0) {
       this._cleanupTimer = setInterval(() => this._evictStale(), cleanupIntervalMs || 300_000);
       this._cleanupTimer.unref();
@@ -39,10 +48,24 @@ class CacheService {
   }
 
   /**
-   * @private Remove all entries whose timestamp is older than the longest possible TTL.
-   * The longest TTL in the codebase is 2 hours (detail pages), so 24h is a safe cutoff.
-   * Absolute-expiry entries (e.g. stream URLs) never exceed the flat TTL plus a margin,
-   * so the same 24h cutoff is safe.
+   * Lazily resolve the L2 client. Reads CACHE_BACKEND at call-time so a
+   * test that flips the env mid-run still picks up the change.
+   */
+  _l2Client() {
+    if (this._l2 !== undefined) return this._l2 || null;
+    if (CACHE_BACKEND !== 'redis') return null;
+    this._l2 = redis.getClient();
+    return this._l2 || null;
+  }
+
+  _key(key) {
+    return `${REDIS_KEY_PREFIX}${key}`;
+  }
+
+  /**
+   * @private Remove all entries whose timestamp is older than the longest
+   * possible TTL. The longest TTL in the codebase is 2 hours (detail
+   * pages), so 24h is a safe cutoff. L2 entries are evicted by Redis TTL.
    */
   _evictStale() {
     const cutoff = Date.now() - 24 * 3_600_000;
@@ -53,10 +76,8 @@ class CacheService {
 
   /**
    * Check whether a cached entry exists and is within its TTL.
+   * L1-only check (synchronous). L2 promotion happens inside readThrough.
    * If the entry carries an `absoluteExpiryMs`, that wins over `ttlHours`.
-   * @param {string} key
-   * @param {number} ttlHours
-   * @returns {boolean}
    */
   isHit(key, ttlHours) {
     const entry = this._store.get(key);
@@ -69,9 +90,8 @@ class CacheService {
   }
 
   /**
-   * Retrieve cached data for a key.
-   * @param {string} key
-   * @returns {*} Stored data, or null if not present.
+   * Retrieve cached data for a key. L1-only (synchronous).
+   * @returns {*} Stored data, or null if not present in L1.
    */
   get(key) {
     const entry = this._store.get(key);
@@ -79,14 +99,40 @@ class CacheService {
   }
 
   /**
-   * Store data in the cache with the current timestamp.
+   * Async L2 lookup. Returns the cached value or null. Errors swallowed.
+   * On hit, also promotes the value into L1 with a current timestamp
+   * so subsequent in-process reads skip the round-trip.
+   */
+  async _l2Get(key) {
+    const c = this._l2Client();
+    if (!c) return null;
+    try {
+      const raw = await c.get(this._key(key));
+      if (raw == null) return null;
+      const value = JSON.parse(raw);
+      // Promote to L1. Stream entries carry absolute expiry on the entry
+      // itself, so we don't recompute here — the L1 hit path's
+      // absoluteExpiryMs check protects against serving past `expiresAt`.
+      this._store.set(key, { data: value, timestamp: Date.now() });
+      return value;
+    } catch (err) {
+      console.warn('[cache] l2 get failed for', key, '-', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Store data in the cache. Writes to both L1 and L2 when L2 is enabled.
+   *
+   * For L2 we use SETEX with a per-entry absolute TTL in seconds. When
+   * `opts.ttlMs` is provided by the caller, that absolute deadline wins;
+   * otherwise the entry's relative TTL is `Math.ceil(ttlHours * 3_600_000 / 1000)`,
+   * matched to the `isHit(key, ttlHours)` check on read.
+   *
    * @param {string}  key
    * @param {*}       data
    * @param {Object}  [opts]
    * @param {number}  [opts.ttlMs]  Optional per-entry absolute TTL in ms.
-   *                                When set, `isHit` will use this instead of any
-   *                                caller-supplied `ttlHours`. Used by stream cache
-   *                                writers to honour upstream `expiresAt`.
    */
   set(key, data, opts) {
     const entry = { data, timestamp: Date.now() };
@@ -94,14 +140,57 @@ class CacheService {
       entry.absoluteExpiryMs = entry.timestamp + opts.ttlMs;
     }
     this._store.set(key, entry);
+
+    const c = this._l2Client();
+    if (!c) return;
+
+    const ttlSeconds = entry.absoluteExpiryMs
+      ? Math.max(1, Math.ceil((entry.absoluteExpiryMs - entry.timestamp) / 1000))
+      : null;
+    if (!ttlSeconds) return; // no relative TTL known at write time; skip L2
+
+    try {
+      const value = JSON.stringify(data);
+      if (ttlSeconds > 0) {
+        c.set(this._key(key), value, 'EX', ttlSeconds).catch((err) => {
+          console.warn('[cache] l2 set failed for', key, '-', err.message);
+        });
+      }
+    } catch (err) {
+      console.warn('[cache] l2 serialise failed for', key, '-', err.message);
+    }
   }
 
   /**
    * Remove all entries. Primarily useful in tests.
+   * Drops both L1 in-flight/coalescing state and the L2 Redis namespace.
    */
   clear() {
     this._store.clear();
     this._inFlight.clear();
+    const c = this._l2Client();
+    if (c) {
+      // Best-effort scan-and-delete of the prefix. SCAN avoids blocking
+      // Redis on large keysets; we accept eventual consistency because
+      // clear() is only called from tests / graceful-shutdown paths.
+      let cursor = '0';
+      const promise = (async () => {
+        try {
+          do {
+            const [next, batch] = await c.scan(cursor, 'MATCH', `${REDIS_KEY_PREFIX}*`, 'COUNT', 100);
+            cursor = next;
+            if (batch.length) {
+              const fullKeys = batch.map(k => k.startsWith(REDIS_KEY_PREFIX) ? k : `${REDIS_KEY_PREFIX}${k}`);
+              await c.del(...fullKeys);
+            }
+          } while (cursor !== '0');
+        } catch (err) {
+          console.warn('[cache] l2 clear failed:', err.message);
+        }
+      })();
+      // Don't await — clear() is synchronous from the caller's POV.
+      promise.catch(() => {});
+    }
   }
 
   /**
@@ -110,10 +199,6 @@ class CacheService {
    * second one. Used by call sites that compute TTL post-fetch (e.g.
    * streams honouring upstream `expiresAt`) and so cannot use the
    * standard `readThrough`.
-   *
-   * @param {string}        key    Cache key (used to coalesce).
-   * @param {() => Promise<*>} fn    Thunk to invoke on cache miss.
-   * @returns {Promise<*>}          Resolves with whichever caller's `fn` produced.
    */
   async singleFlight(key, fn) {
     const inFlight = this._inFlight.get(key);
@@ -132,37 +217,51 @@ class CacheService {
   /**
    * Cache-aside read-through with single-flight coalescing and metrics.
    *
-   * On hit: records a hit (if `category` is provided) and returns the
-   * cached value.
-   * On miss: records a miss (timed, if `category` is provided), invokes
-   * `fetcher()`, caches the non-null result, and returns it. Concurrent
-   * misses on the same key share a single upstream call — the leader
-   * fetches; waiters receive the same result.
+   * Two-tier behavior (when CACHE_BACKEND=redis):
+   *   1. L1 hit → record hit, return.
+   *   2. L1 miss + L2 hit → promote to L1, record hit, return.
+   *   3. L1 miss + L2 miss → record miss, invoke fetcher, cache L1 + L2,
+   *      return. Concurrent misses on the same key share one upstream call.
    *
    * `category === null` skips both hit and miss metric recording (useful
    * for hardcoded result sets with no upstream involved).
    *
-   * @param {string}        key        Cache key.
-   * @param {number}        ttl        TTL in hours (consulted when no `absoluteExpiryMs`
-   *                                   is present on the cached entry).
-   * @param {string|null}   category   Logical category for metrics; null disables metric
-   *                                   recording for this key.
-   * @param {() => Promise<*>} fetcher Thunk that performs the upstream fetch.
-   * @returns {Promise<*>}             Cached value (or fetcher's return value).
+   * Single-flight slots are claimed BEFORE any await so a burst of
+   * concurrent misses all share the same leader (and the same L2 lookup
+   * round-trip, when applicable).
    */
   async readThrough(key, ttl, category, fetcher) {
+    // 1. Sync L1 check.
     if (this.isHit(key, ttl)) {
       if (category) metrics.recordHit(category);
       return this.get(key);
     }
-    const inFlight = this._inFlight.get(key);
-    if (inFlight) return inFlight;
+
+    // 2. Sync single-flight claim — concurrent callers must see this slot.
+    const existing = this._inFlight.get(key);
+    if (existing) return existing;
+
+    // 3. Build the work promise and register it (both still synchronous).
     const promise = (async () => {
       try {
+        // 4a. Try Redis L2 only when configured (avoids a useless microtask
+        //     in memory-only mode and keeps the cold path tight).
+        if (this._l2Client()) {
+          const l2Value = await this._l2Get(key);
+          if (l2Value != null) {
+            if (category) {
+              metrics.recordHit(category);
+              metrics.recordL2Hit(category);
+            }
+            return l2Value;
+          }
+          if (category) metrics.recordL2Miss(category);
+        }
+        // 4b. L2 miss (or L2 disabled) → fetch and cache.
         const result = category
           ? await metrics.fetch(category, fetcher)
           : await fetcher();
-        if (result != null) this._store.set(key, { data: result, timestamp: Date.now() });
+        if (result != null) this.set(key, result);
         return result;
       } finally {
         this._inFlight.delete(key);
@@ -173,6 +272,14 @@ class CacheService {
   }
 }
 
+/**
+ * Compute the safe TTL for caching a stream result, honouring the
+ * upstream-provided `expiresAt` if present. Kept in its own module so
+ * the cacheService integration-test mock does not shadow this helper.
+ */
+const { effectiveStreamTtlMs } = require('./streamTtl');
+
 const instance = new CacheService();
 module.exports = instance;
 module.exports.CacheService = CacheService;             // exposed for unit testing
+module.exports.effectiveStreamTtlMs = effectiveStreamTtlMs;

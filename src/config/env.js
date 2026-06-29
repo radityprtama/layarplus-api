@@ -21,6 +21,26 @@ module.exports = {
   ENABLE_GEO_TRENDING: process.env.ENABLE_GEO_TRENDING !== "false",
 
   /**
+   * Cache backend selector. 'memory' (default) keeps the in-process Map
+   * singleton from Phase 1. 'redis' adds a Redis L2 to cacheService for
+   * cross-instance fan-in when the API runs ≥2 replicas (Phase 3).
+   */
+  CACHE_BACKEND: (process.env.CACHE_BACKEND || 'memory').toLowerCase(),
+
+  /** Boolean derived: true iff CACHE_BACKEND === 'redis'. */
+  get REDIS_ENABLED() { return this.CACHE_BACKEND === 'redis'; },
+
+  /** Redis connection string used when CACHE_BACKEND=redis. */
+  REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
+
+  /**
+   * Key prefix for cache entries stored in Redis. Keep short to save bytes.
+   * The in-process Map uses the same logical key (no prefix) so the two
+   * layers are addressable identically from `cacheService`.
+   */
+  REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX || 'idlc:',
+
+  /**
    * Per-category cache TTLs in hours.
    * Each can be overridden via a corresponding CACHE_TTL_* env var.
    */

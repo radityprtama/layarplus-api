@@ -1,6 +1,9 @@
 "use strict";
 
 const homepageService = require("../services/homepage.service");
+const { CACHE_BACKEND } = require("../config/env");
+const redis = require("../lib/redis");
+const { getStats } = require("../lib/metrics");
 const { success } = require("../lib/responseHelper");
 
 exports.status = (req, res) => {
@@ -8,6 +11,11 @@ exports.status = (req, res) => {
     success: true,
     message: "LayarPlus API v3",
     repo: "radityprtama",
+    cache: {
+      backend: CACHE_BACKEND,
+      redisReady: redis.isReady(),
+    },
+    metrics: getStats(),
   });
 };
 
