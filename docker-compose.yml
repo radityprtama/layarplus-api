@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
 
   api:
-    build: .
+    image: quay.io/radityprtama/layarplus-api:latest
     container_name: idlix-api
     ports:
       - "3001:3001"
