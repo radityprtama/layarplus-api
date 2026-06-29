@@ -15,13 +15,12 @@ const request    = require('supertest');
 const createApp  = require('../../src/app');
 const httpClient = require('../../src/lib/httpClient');
 const cache      = require('../../src/lib/cacheService');
+const { browseResponse, cachedBrowseResult, rawMediaItem } = require('../fixtures/builders');
 
-const MOCK_API_LIST = {
-  data: [
-    { title: 'Series 1', slug: 'series-1', contentType: 'series' },
-    { title: 'Series 2', slug: 'series-2', contentType: 'series' }
-  ]
-};
+const SERIES_ITEMS = [
+  rawMediaItem('Series 1', 'series-1', 'series'),
+  rawMediaItem('Series 2', 'series-2', 'series'),
+];
 
 const MOCK_API_TRENDING = {
   above: [
@@ -59,7 +58,7 @@ describe('Series Routes', () => {
 
   describe('GET /api/series', () => {
     it('returns 200 with series browse items', async () => {
-      httpClient.getJson.mockResolvedValue(MOCK_API_LIST);
+      httpClient.getJson.mockResolvedValue(browseResponse(SERIES_ITEMS));
 
       const res = await request(app).get('/api/series');
 
@@ -71,15 +70,26 @@ describe('Series Routes', () => {
     });
 
     it('returns cached data and skips HTTP when cache is fresh', async () => {
-      const cached = [{ title: 'Cached Series', slug: 'cached-series' }];
+      const cachedItems = [{ title: 'Cached Series', slug: 'cached-series' }];
       cache.isHit.mockReturnValue(true);
-      cache.get.mockReturnValue(cached);
+      cache.get.mockReturnValue(cachedBrowseResult(cachedItems));
 
       const res = await request(app).get('/api/series');
 
       expect(res.status).toBe(200);
-      expect(res.body.data).toEqual(cached);
+      expect(res.body.data).toEqual(cachedItems);
       expect(httpClient.getJson).not.toHaveBeenCalled();
+    });
+
+    it('stops aggregation loop after totalPages (regression)', async () => {
+      const manyPages = browseResponse(SERIES_ITEMS, 3);
+      httpClient.getJson.mockResolvedValue(manyPages);
+
+      const res = await request(app).get('/api/series');
+
+      expect(res.status).toBe(200);
+      expect(httpClient.getJson).toHaveBeenCalledTimes(3);
+      expect(res.body.data).toHaveLength(6);
     });
   });
 

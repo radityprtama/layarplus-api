@@ -15,13 +15,12 @@ const request    = require('supertest');
 const createApp  = require('../../src/app');
 const httpClient = require('../../src/lib/httpClient');
 const cache      = require('../../src/lib/cacheService');
+const { browseResponse, cachedBrowseResult, rawMediaItem } = require('../fixtures/builders');
 
-const MOCK_API_LIST = {
-  data: [
-    { title: 'Movie 1', slug: 'movie-1', contentType: 'movie' },
-    { title: 'Movie 2', slug: 'movie-2', contentType: 'movie' }
-  ]
-};
+const MOVIE_ITEMS = [
+  rawMediaItem('Movie 1', 'movie-1', 'movie'),
+  rawMediaItem('Movie 2', 'movie-2', 'movie'),
+];
 
 const MOCK_API_TRENDING = {
   above: [
@@ -57,7 +56,7 @@ describe('Movie Routes', () => {
 
   describe('GET /api/movie', () => {
     it('returns 200 with envelope and movie browse items', async () => {
-      httpClient.getJson.mockResolvedValue(MOCK_API_LIST);
+      httpClient.getJson.mockResolvedValue(browseResponse(MOVIE_ITEMS));
 
       const res = await request(app).get('/api/movie');
 
@@ -66,6 +65,18 @@ describe('Movie Routes', () => {
       expect(Array.isArray(res.body.data)).toBe(true);
       expect(res.body.data).toHaveLength(2);
       expect(httpClient.getJson).toHaveBeenCalledWith('/api/movies?page=1&limit=36&sort=createdAt');
+    });
+
+    it('stops aggregation loop after totalPages (regression)', async () => {
+      const manyPages = browseResponse(MOVIE_ITEMS, 3);
+      httpClient.getJson.mockResolvedValue(manyPages);
+
+      const res = await request(app).get('/api/movie');
+
+      expect(res.status).toBe(200);
+      // Should fetch only 3 pages, not the full 100
+      expect(httpClient.getJson).toHaveBeenCalledTimes(3);
+      expect(res.body.data).toHaveLength(6);
     });
   });
 
@@ -114,7 +125,7 @@ describe('Movie Routes', () => {
 
   describe('GET /api/movie/trending/:page', () => {
     it('returns 200 with movies for page 1', async () => {
-      httpClient.getJson.mockResolvedValue(MOCK_API_LIST);
+      httpClient.getJson.mockResolvedValue(browseResponse(MOVIE_ITEMS));
 
       const res = await request(app).get('/api/movie/trending/1');
 
