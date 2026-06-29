@@ -26,6 +26,289 @@ The API is available at `http://localhost:3000`. Interactive API docs at [`http:
 
 ---
 
+## VPS Deployment Guide
+
+This section covers production deployment on a VPS. The API consists of two containers:
+- **api** (`layarplus-api``) — Express server that proxies upstream content
+- **silentium** — Headless Chromium microservice that bypasses Cloudflare challenges
+
+### Prerequisites
+
+| Requirement | Version |
+|-------------|---------|
+| Docker | 24+ |
+| Docker Compose | v2 (plugin) |
+| CPU | 2+ cores (Silentium needs CPU for Chromium) |
+| RAM | 2 GB+ |
+| Disk | 20 GB+ |
+| Domain | Pointed to VPS IP for TLS |
+
+### 1. Clone & Configure
+
+```bash
+git clone https://github.com/radityprtama/layarplus-api.git
+cd layarplus-api
+cp .env.example .env
+```
+
+**Critical env vars to set:**
+
+```bash
+# Silentium URL — depends on deployment topology (see table below)
+SILENTIUM_API_URL=http://silentium:8191
+
+# API port (do not expose directly to the internet — use Nginx)
+PORT=3001
+```
+
+### 2. Silentium URL Reference
+
+`SILENTIUM_API_URL` must match how the API container can reach Silentium:
+
+| Topology | `SILENTIUM_API_URL` | When to use |
+|----------|---------------------|-------------|
+| Docker Compose (same compose file) | `http://silentium:8191` | **Default** — Docker DNS resolves the container name |
+| API standalone on host, Silentium on same host | `http://localhost:8191` | Manual `npm start`, or Docker run with `--network host` |
+| API on host A, Silentium on host B | `http://<host-b-ip>:8191` | Cross-machine setup |
+| API in Docker, Silentium on host | `http://host.docker.internal:8191` | Linux requires `--add-host host.docker.internal:host-gateway` |
+
+### 3. Start Services
+
+```bash
+docker compose up -d
+```
+
+Verify both containers are running:
+
+```bash
+docker compose ps
+```
+
+Expected output:
+
+```
+NAME                IMAGE                                          STATUS
+idlix-api           quay.io/radityprtama/layarplus-api:latest      Up (healthy)
+silentium           quay.io/radityprtama/silentium:latest          Up
+```
+
+### 4. Verify the Pipeline
+
+Run these **four checks** to validate the entire chain:
+
+```bash
+# Check 1: API is alive
+curl -s http://localhost:3001/api/
+# Expected: {"success":true,"message":"LayarPlus API v3"}
+
+# Check 2: Silentium is reachable
+curl -s http://localhost:8191/v1/request \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"url":"https://z2.idlixku.com","method":"GET","disableMedia":true}'
+# Expected: {"status":"ok","solution":{...}} with cf_clearance cookie
+
+# Check 3: API returns real data via Silentium
+curl -s http://localhost:3001/api/featured
+# Expected: {"success":true,"data":[...]} — non-empty array
+
+# Check 4: Movie detail works
+curl -s "http://localhost:3001/api/movie/spirited-2022"
+# Expected: {"success":true,"data":{"title":"Spirited",...}}
+```
+
+If Check 1 passes but Check 3 returns `{"success":true,"data":[]}`, the API cannot reach Silentium (Check 2 will also fail). See [Silentium Configuration](#silentium-configuration).
+
+### 5. Nginx Reverse Proxy
+
+Do **not** expose port 3001 directly. Use Nginx with SSL.
+
+```nginx
+# /etc/nginx/sites-available/api.your-domain.com
+server {
+    listen 80;
+    server_name api.your-domain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.your-domain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/api.your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.your-domain.com/privkey.pem;
+
+    # Pass through the original client IP for GeoIP trending
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+    proxy_set_header CF-IPCountry $http_cf_ipcountry;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+    }
+}
+```
+
+```bash
+# Obtain SSL cert
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d api.your-domain.com
+
+# Test config
+sudo nginx -t
+
+# Reload
+sudo systemctl reload nginx
+```
+
+### 6. Firewall
+
+```bash
+# Allow only HTTP/HTTPS and internal Docker networking
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw deny 3001/tcp   # API — block external access
+sudo ufw deny 8191/tcp   # Silentium — block external access
+sudo ufw enable
+```
+
+If Silentium needs to be exposed externally (debugging only), bind to loopback:
+```yaml
+# docker-compose.yml
+silentium:
+  ports:
+    - "127.0.0.1:8191:8191"
+```
+
+### 7. Docker Health Checks
+
+The API container includes a `HEALTHCHECK` that pings `/api/` every 30s. Monitor with:
+
+```bash
+docker inspect --format='{{json .State.Health}}' idlix-api
+```
+
+### 8. Logs
+
+```bash
+# API logs
+docker compose logs -f api
+
+# Silentium logs
+docker compose logs -f silentium
+
+# API-only: check for [silentiumClient] warnings (connection issues)
+docker compose logs api | grep silentiumClient
+```
+
+---
+
+## Troubleshooting
+
+### Symptom: API returns `{"success":true,"data":[]}` on all endpoints
+
+**Cause:** API cannot reach Silentium. The upstream `z2.idlixku.com` requires Cloudflare bypass — without Silentium, every upstream request returns empty/blocked.
+
+**Check Silentium connectivity:**
+
+```bash
+# From the VPS host, call Silentium directly
+curl -s http://localhost:8191/v1/request \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"url":"https://z2.idlixku.com","method":"GET","disableMedia":true}'
+```
+
+If this fails (connection refused, timeout), Silentium is not running:
+
+```bash
+docker compose up -d silentium
+docker compose logs silentium
+```
+
+If this succeeds but the API still returns empty data:
+
+```bash
+# Verify the API's SILENTIUM_API_URL is correct
+docker compose exec api env | grep SILENTIUM
+
+# Restart both containers to clear stale in-memory cache
+docker compose restart
+```
+
+**Cache poisoning:** When Silentium was offline, the API cached empty results in memory. Restarting clears the cache and forces fresh fetches.
+
+### Symptom: Silentium returns `"status":"error"`
+
+Chromium OOM or crash. Check logs:
+
+```bash
+docker compose logs silentium
+```
+
+**Fix:** Increase VPS RAM or restrict Chrome headless flags. Add to `docker-compose.yml`:
+
+```yaml
+silentium:
+  environment:
+    - HEADLESS=true
+    # Optional: limit Chrome memory
+    - PUPPETEER_CHROMIUM_FLAGS=--disable-dev-shm-usage --no-sandbox
+```
+
+### Symptom: `docker compose up -d` fails with "no matching manifest"
+
+The Silentium image URL `quay.io/radityprtama/silentium:latest` may not exist or be private. Verify:
+
+```bash
+docker pull quay.io/radityprtama/silentium:latest
+```
+
+If unavailable, you can build Silentium from source: [`radityprtama/silentium`](https://github.com/radityprtama/silentium)
+
+### Symptom: API returns 404 for `/api/movie/spirited-2022`
+
+The slug exists upstream as a movie, but the upstream `/api/movies/{slug}` returned 404. First check if Silentium is working (verification steps above). If Silentium is healthy, the upstream may have removed the title.
+
+### Symptom: Stream extraction fails or returns no URL
+
+Streams go through a complex pipeline (UUID → gate token → 15s delay → session claim → .m3u8). This can fail if:
+- The upstream gate token flow changed
+- The 15s countdown timeout is exceeded
+- The upstream blocks the Silentium browser fingerprint
+
+Check logs:
+
+```bash
+docker compose logs api | grep stream
+```
+
+### Symptom: CORS errors from frontend
+
+The API uses `cors()` with default options (allows all origins). If you added Nginx, ensure it's not stripping CORS headers. Test:
+
+```bash
+curl -s -I -X OPTIONS https://api.your-domain.com/api/ \
+  -H "Origin: https://your-frontend.vercel.app" \
+  -H "Access-Control-Request-Method: GET"
+```
+
+Expected: `access-control-allow-origin: *`
+
+### Reset everything
+
+```bash
+# Stop and reset
+docker compose down -v
+docker compose up -d
+
+# Clear Docker cache if images are stale
+docker compose pull
+docker compose up -d --force-recreate
+```
+
 ## Features
 
 | Feature | Description |
