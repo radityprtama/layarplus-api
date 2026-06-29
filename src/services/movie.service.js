@@ -3,6 +3,7 @@
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
 const metrics    = require('../lib/metrics');
+const { effectiveStreamTtlMs } = require('../lib/streamTtl');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, mapApiDetail } = require('../lib/scraper');
 
@@ -156,7 +157,8 @@ async function getDetail(slug) {
  *   5. POST /api/watch/session/claim        → claim JWT + redeemUrl
  *   6. POST redeemUrl (majorplay.net)       → config URL + subtitles
  *
- * Results are cached with a short TTL since stream URLs expire.
+ * IMPORTANT: result.expiresAt (from step 5/6) is a short-lived signed URL.
+ * Never cache past its expiry — see Phase 1 of the Redis audit / stream TTL fix.
  *
  * @param {string} slug - e.g. "salmokji-whispering-water-2026"
  * @returns {Promise<{
@@ -174,7 +176,10 @@ async function getStreamData(slug) {
   if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit('movie.stream'); return cache.get(key); }
 
   const result = await metrics.fetch('movie.stream', () => httpClient.getStreamData(slug));
-  if (result.streamUrl) cache.set(key, result);
+  if (result.streamUrl) {
+    const ttlMs = effectiveStreamTtlMs(CACHE_TTL.stream, result.expiresAt);
+    if (ttlMs > 0) cache.set(key, result, { ttlMs });
+  }
   return result;
 }
 

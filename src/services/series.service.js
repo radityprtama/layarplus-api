@@ -3,6 +3,7 @@
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
 const metrics    = require('../lib/metrics');
+const { effectiveStreamTtlMs } = require('../lib/streamTtl');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, mapApiDetail, mapEpisode, ensureContentType } = require('../lib/scraper');
 
@@ -147,10 +148,12 @@ async function getDetail(slug) {
 }
 
 /**
- * Fetch the stream data for a series episode: URL, subtitles, and metadata.
+ * Fetch the stream data for a series (first episode — backward-compat): URL, subtitles, metadata.
  *
  * Delegates to httpClient.getStreamData which runs the full API chain.
- * Results are cached with a short TTL since stream URLs expire.
+ *
+ * IMPORTANT: result.expiresAt (from the redeem step) is a short-lived signed URL.
+ * Never cache past its expiry — see Phase 1 of the Redis audit / stream TTL fix.
  *
  * @param {string} slug - e.g. "the-last-of-us-2023"
  * @returns {Promise<{
@@ -168,12 +171,18 @@ async function getStreamData(slug) {
   if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit('series.stream'); return cache.get(key); }
 
   const result = await metrics.fetch('series.stream', () => httpClient.getStreamData(slug));
-  if (result.streamUrl) cache.set(key, result);
+  if (result.streamUrl) {
+    const ttlMs = effectiveStreamTtlMs(CACHE_TTL.stream, result.expiresAt);
+    if (ttlMs > 0) cache.set(key, result, { ttlMs });
+  }
   return result;
 }
 
 /**
  * Fetch stream data for a specific series episode.
+ *
+ * IMPORTANT: result.expiresAt (from the redeem step) is a short-lived signed URL.
+ * Never cache past its expiry — see Phase 1 of the Redis audit / stream TTL fix.
  *
  * @param {string} slug    - e.g. "oasis-2026"
  * @param {number} season  - Season number (1-based)
@@ -193,7 +202,10 @@ async function getEpisodeStreamData(slug, season, episode) {
   if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit('series.episodeStream'); return cache.get(key); }
 
   const result = await metrics.fetch('series.episodeStream', () => httpClient.getEpisodeStreamData(slug, Number(season), Number(episode)));
-  if (result.streamUrl) cache.set(key, result);
+  if (result.streamUrl) {
+    const ttlMs = effectiveStreamTtlMs(CACHE_TTL.stream, result.expiresAt);
+    if (ttlMs > 0) cache.set(key, result, { ttlMs });
+  }
   return result;
 }
 

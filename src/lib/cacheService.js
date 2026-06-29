@@ -9,6 +9,12 @@ const metrics = require('./metrics');
  * instance is the default export consumed by services.
  *
  * Stale entries are purged periodically to prevent unbounded Map growth.
+ *
+ * Entries may optionally carry an `absoluteExpiryMs` (set via
+ * `set(key, data, { ttlMs })`). When present, `isHit` checks the absolute
+ * expiry instead of the caller-supplied `ttlHours`. This lets cache
+ * writers express "never serve this past upstream X" without relying on
+ * the caller passing the same TTL to both `isHit` and `set`.
  */
 class CacheService {
   /**
@@ -16,7 +22,7 @@ class CacheService {
    *                                               Set to 0 to disable periodic cleanup.
    */
   constructor(cleanupIntervalMs) {
-    /** @type {Map<string, {data: *, timestamp: number}>} */
+    /** @type {Map<string, {data: *, timestamp: number, absoluteExpiryMs?: number}>} */
     this._store = new Map();
 
     // ponytail: periodic eviction prevents unbounded Map growth.
@@ -33,6 +39,8 @@ class CacheService {
   /**
    * @private Remove all entries whose timestamp is older than the longest possible TTL.
    * The longest TTL in the codebase is 2 hours (detail pages), so 24h is a safe cutoff.
+   * Absolute-expiry entries (e.g. stream URLs) never exceed the flat TTL plus a margin,
+   * so the same 24h cutoff is safe.
    */
   _evictStale() {
     const cutoff = Date.now() - 24 * 3_600_000;
@@ -43,6 +51,7 @@ class CacheService {
 
   /**
    * Check whether a cached entry exists and is within its TTL.
+   * If the entry carries an `absoluteExpiryMs`, that wins over `ttlHours`.
    * @param {string} key
    * @param {number} ttlHours
    * @returns {boolean}
@@ -50,7 +59,11 @@ class CacheService {
   isHit(key, ttlHours) {
     const entry = this._store.get(key);
     if (!entry) return false;
-    return (Date.now() - entry.timestamp) < ttlHours * 3_600_000;
+    const now = Date.now();
+    if (entry.absoluteExpiryMs != null) {
+      return now < entry.absoluteExpiryMs;
+    }
+    return (now - entry.timestamp) < ttlHours * 3_600_000;
   }
 
   /**
@@ -65,11 +78,20 @@ class CacheService {
 
   /**
    * Store data in the cache with the current timestamp.
-   * @param {string} key
-   * @param {*} data
+   * @param {string}  key
+   * @param {*}       data
+   * @param {Object}  [opts]
+   * @param {number}  [opts.ttlMs]  Optional per-entry absolute TTL in ms.
+   *                                When set, `isHit` will use this instead of any
+   *                                caller-supplied `ttlHours`. Used by stream cache
+   *                                writers to honour upstream `expiresAt`.
    */
-  set(key, data) {
-    this._store.set(key, { data, timestamp: Date.now() });
+  set(key, data, opts) {
+    const entry = { data, timestamp: Date.now() };
+    if (opts && Number.isFinite(opts.ttlMs) && opts.ttlMs >= 0) {
+      entry.absoluteExpiryMs = entry.timestamp + opts.ttlMs;
+    }
+    this._store.set(key, entry);
   }
 
   /**
