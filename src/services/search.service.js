@@ -2,6 +2,7 @@
 
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
+const metrics    = require('../lib/metrics');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem } = require('../lib/scraper');
 
@@ -18,14 +19,14 @@ const { mapApiItem } = require('../lib/scraper');
 async function search(query, { page, limit, sort } = {}) {
   const normalisedQuery = `${query.trim().toLowerCase()}|p${page || 1}l${limit || 20}s${sort || ''}`;
   const key = `search.${normalisedQuery}`;
-  if (cache.isHit(key, CACHE_TTL.search)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.search)) { metrics.recordHit('search'); return cache.get(key); }
 
   const params = new URLSearchParams({ q: query.trim() });
   if (page != null) params.set('page', String(page));
   if (limit != null) params.set('limit', String(limit));
   if (sort) params.set('sort', sort);
 
-  const data = await httpClient.getJson(`/api/search?${params}`);
+  const data = await metrics.fetch('search', () => httpClient.getJson(`/api/search?${params}`));
 
   const total = data?.total || 0;
   const items = (data?.results || []).map(mapApiItem).filter(Boolean);

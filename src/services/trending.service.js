@@ -1,7 +1,8 @@
 'use strict';
 
 const httpClient = require('../lib/httpClient');
-const cache = require('../lib/cacheService');
+const cache      = require('../lib/cacheService');
+const metrics    = require('../lib/metrics');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, ensureContentType } = require('../lib/scraper');
 
@@ -81,11 +82,11 @@ function popularityOf(item) {
  */
 async function getNearYou(country) {
   const key = `trending.nearyou.${country}`;
-  if (cache.isHit(key, CACHE_TTL.trending)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.trending)) { metrics.recordHit('trending.nearyou'); return cache.get(key); }
 
   const [movieRes, seriesRes] = await Promise.allSettled([
-    fetchResource('movies', country),
-    fetchResource('series', country),
+    metrics.fetch('trending.nearyou.movie', () => fetchResource('movies', country)),
+    metrics.fetch('trending.nearyou.series', () => fetchResource('series', country)),
   ]);
 
   // A resource "succeeded" only if it resolved AND returned an array (not null,

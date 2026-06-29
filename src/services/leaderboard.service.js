@@ -2,6 +2,7 @@
 
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
+const metrics    = require('../lib/metrics');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem } = require('../lib/scraper');
 
@@ -13,9 +14,9 @@ const { mapApiItem } = require('../lib/scraper');
  */
 async function getLeaderboard() {
   const key = 'leaderboard';
-  if (cache.isHit(key, CACHE_TTL.leaderboard)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.leaderboard)) { metrics.recordHit('leaderboard'); return cache.get(key); }
 
-  const data = await httpClient.getJson('/api/leaderboard');
+  const data = await metrics.fetch('leaderboard', () => httpClient.getJson('/api/leaderboard'));
   
   if (!data) return {};
 

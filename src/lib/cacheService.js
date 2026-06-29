@@ -1,5 +1,7 @@
 'use strict';
 
+const metrics = require('./metrics');
+
 /**
  * Simple in-memory TTL cache backed by a Map.
  * Replaces the quick.db dependency — no SQLite file required.
@@ -23,6 +25,9 @@ class CacheService {
       this._cleanupTimer = setInterval(() => this._evictStale(), cleanupIntervalMs || 300_000);
       this._cleanupTimer.unref();
     }
+    // Kick off the 5-minute cache-stats log alongside the eviction timer.
+    // startPeriodicLog is idempotent; safe to call from here at boot.
+    metrics.startPeriodicLog(cleanupIntervalMs || 300_000);
   }
 
   /**
@@ -77,4 +82,4 @@ class CacheService {
 
 const instance = new CacheService();
 module.exports = instance;
-module.exports.CacheService = CacheService; // exposed for unit testing
+module.exports.CacheService = CacheService;             // exposed for unit testing

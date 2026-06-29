@@ -2,6 +2,7 @@
 
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
+const metrics    = require('../lib/metrics');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, mapApiDetail, mapEpisode, ensureContentType } = require('../lib/scraper');
 
@@ -26,9 +27,9 @@ async function getBrowse(page, limit, sort) {
 
   if (page != null) {
     const key = `series.browse.p${page}.l${resLimit}.s${resSort}`;
-    if (cache.isHit(key, CACHE_TTL.page)) return cache.get(key);
+    if (cache.isHit(key, CACHE_TTL.page)) { metrics.recordHit('series.browse'); return cache.get(key); }
 
-    const data = await fetchPage('series', Number(page), resLimit, resSort);
+    const data = await metrics.fetch('series.browse', () => fetchPage('series', Number(page), resLimit, resSort));
     const items = (data?.data || []).map(i => ensureContentType(i)).map(mapApiItem).filter(Boolean);
     const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
 
@@ -46,14 +47,14 @@ async function getBrowse(page, limit, sort) {
   }
 
   const allKey = 'series.browse.all';
-  if (cache.isHit(allKey, CACHE_TTL.page)) return cache.get(allKey);
+  if (cache.isHit(allKey, CACHE_TTL.page)) { metrics.recordHit('series.browse'); return cache.get(allKey); }
 
   const allItems = [];
   let currentPage = 1;
   let totalPages = 1;
 
   while (currentPage <= 100) {
-    const data = await fetchPage('series', currentPage, resLimit, resSort);
+    const data = await metrics.fetch('series.browse', () => fetchPage('series', currentPage, resLimit, resSort));
     const items = (data?.data || []).map(i => ensureContentType(i)).map(mapApiItem).filter(Boolean);
 
     if (items.length === 0) break;
@@ -86,9 +87,9 @@ async function getBrowse(page, limit, sort) {
  */
 async function getTrending() {
   const key = 'trending.tv';
-  if (cache.isHit(key, CACHE_TTL.trending)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.trending)) { metrics.recordHit('series.trending'); return cache.get(key); }
 
-  const data = await httpClient.getJson('/api/homepage');
+  const data = await metrics.fetch('series.trending', () => httpClient.getJson('/api/homepage'));
   if (!data || !data.above) return [];
 
   const section = data.above.find(s => s.title && s.title.toLowerCase().includes('trending')) || data.above[0];
@@ -108,9 +109,9 @@ async function getTrending() {
  */
 async function getDetail(slug) {
   const key = `series.detail.${slug}`;
-  if (cache.isHit(key, CACHE_TTL.detail)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.detail)) { metrics.recordHit('series.detail'); return cache.get(key); }
 
-  const data = await httpClient.getJson(`/api/series/${slug}`);
+  const data = await metrics.fetch('series.detail', () => httpClient.getJson(`/api/series/${slug}`));
   const detail = mapApiDetail(data);
 
   if (!detail.title) {
@@ -127,7 +128,7 @@ async function getDetail(slug) {
       detail.seasons.map(async (s) => {
         if (s.episodes && s.episodes.length) return; // already populated
         try {
-          const sd = await httpClient.getJson(`/api/series/${slug}/season/${s.seasonNumber}`);
+          const sd = await metrics.fetch('series.detailSeason', () => httpClient.getJson(`/api/series/${slug}/season/${s.seasonNumber}`));
           const eps = (sd && sd.season && sd.season.episodes) || [];
           s.episodes = eps.map((e) => mapEpisode(e, {
             seasonPosterPath: sd?.season?.posterPath,
@@ -164,9 +165,9 @@ async function getDetail(slug) {
  */
 async function getStreamData(slug) {
   const key = `series.stream.${slug}`;
-  if (cache.isHit(key, CACHE_TTL.stream)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit('series.stream'); return cache.get(key); }
 
-  const result = await httpClient.getStreamData(slug, 'series');
+  const result = await metrics.fetch('series.stream', () => httpClient.getStreamData(slug));
   if (result.streamUrl) cache.set(key, result);
   return result;
 }
@@ -189,9 +190,9 @@ async function getStreamData(slug) {
  */
 async function getEpisodeStreamData(slug, season, episode) {
   const key = `series.stream.${slug}.s${season}e${episode}`;
-  if (cache.isHit(key, CACHE_TTL.stream)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit('series.episodeStream'); return cache.get(key); }
 
-  const result = await httpClient.getEpisodeStreamData(slug, Number(season), Number(episode));
+  const result = await metrics.fetch('series.episodeStream', () => httpClient.getEpisodeStreamData(slug, Number(season), Number(episode)));
   if (result.streamUrl) cache.set(key, result);
   return result;
 }

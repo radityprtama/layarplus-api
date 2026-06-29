@@ -2,6 +2,7 @@
 
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
+const metrics    = require('../lib/metrics');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, ensureContentType } = require('../lib/scraper');
 
@@ -12,9 +13,9 @@ const { mapApiItem, ensureContentType } = require('../lib/scraper');
  */
 async function getFeatured() {
   const key = 'featured';
-  if (cache.isHit(key, CACHE_TTL.featured)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.featured)) { metrics.recordHit('featured'); return cache.get(key); }
 
-  const data = await httpClient.getJson('/api/homepage');
+  const data = await metrics.fetch('featured', () => httpClient.getJson('/api/homepage'));
   if (!data || !data.above) return [];
   
   const section = data.above.find(s => s.title && s.title.toLowerCase().includes('featured')) || data.above[0];
@@ -31,9 +32,9 @@ async function getFeatured() {
  */
 async function getCinemaxxi() {
   const key = 'cinemaxxi';
-  if (cache.isHit(key, CACHE_TTL.cinemaxxi)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.cinemaxxi)) { metrics.recordHit('cinemaxxi'); return cache.get(key); }
 
-  const data = await httpClient.getJson('/api/homepage');
+  const data = await metrics.fetch('cinemaxxi', () => httpClient.getJson('/api/homepage'));
   if (!data || !data.above) return [];
 
   const section = data.above.find(s => s.title && s.title.toLowerCase().includes('recently added movies')) || data.above[1];
@@ -50,9 +51,9 @@ async function getCinemaxxi() {
  */
 async function getHome() {
   const key = 'home.all';
-  if (cache.isHit(key, CACHE_TTL.home)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.home)) { metrics.recordHit('home.all'); return cache.get(key); }
 
-  const data = await httpClient.getJson('/api/homepage');
+  const data = await metrics.fetch('home.all', () => httpClient.getJson('/api/homepage'));
   if (!data) return [];
 
   const allSections = [...(data.above || []), ...(data.below || [])];
@@ -69,9 +70,9 @@ async function getHome() {
  */
 async function getHomeSections() {
   const key = 'home.sections';
-  if (cache.isHit(key, CACHE_TTL.home)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.home)) { metrics.recordHit('home.sections'); return cache.get(key); }
 
-  const data = await httpClient.getJson('/api/homepage');
+  const data = await metrics.fetch('home.sections', () => httpClient.getJson('/api/homepage'));
   if (!data) return {};
 
   const sections = {};
@@ -113,15 +114,15 @@ async function getHomeSections() {
  * @returns {Promise<Array>}
  */
 async function fetchMixedTrending(limit) {
-  const fetchResource = async (resource) => {
+  const fetchResource = (resource, category) => async () => {
     const json = await httpClient.getJson(`/api/${resource}?country=US&page=1&limit=${limit}&sort=popularityScore`);
     if (json == null) return null;
     return Array.isArray(json.data) ? json.data : [];
   };
 
   const [movieRes, seriesRes] = await Promise.allSettled([
-    fetchResource('movies'),
-    fetchResource('series'),
+    metrics.fetch('trending.movieFallback', fetchResource('movies', 'trending.movieFallback')),
+    metrics.fetch('trending.seriesFallback', fetchResource('series', 'trending.seriesFallback')),
   ]);
 
   const movieOk = movieRes.status === 'fulfilled' && movieRes.value != null;

@@ -1,7 +1,8 @@
 'use strict';
 
 const httpClient = require('../lib/httpClient');
-const cache = require('../lib/cacheService');
+const cache      = require('../lib/cacheService');
+const metrics    = require('../lib/metrics');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, mapApiDetail } = require('../lib/scraper');
 
@@ -31,9 +32,9 @@ async function getBrowse(page, limit, sort) {
 
   if (page != null) {
     const key = `movie.browse.p${page}.l${resLimit}.s${resSort}`;
-    if (cache.isHit(key, CACHE_TTL.page)) return cache.get(key);
+    if (cache.isHit(key, CACHE_TTL.page)) { metrics.recordHit('movie.browse'); return cache.get(key); }
 
-    const data = await fetchPage('movies', Number(page), resLimit, resSort);
+    const data = await metrics.fetch('movie.browse', () => fetchPage('movies', Number(page), resLimit, resSort));
     const items = (data?.data || []).map(mapApiItem).filter(Boolean);
     const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
 
@@ -51,14 +52,14 @@ async function getBrowse(page, limit, sort) {
   }
 
   const allKey = 'movie.browse.all';
-  if (cache.isHit(allKey, CACHE_TTL.page)) return cache.get(allKey);
+  if (cache.isHit(allKey, CACHE_TTL.page)) { metrics.recordHit('movie.browse'); return cache.get(allKey); }
 
   const allItems = [];
   let currentPage = 1;
   let totalPages = 1;
 
   while (currentPage <= 100) {
-    const data = await fetchPage('movies', currentPage, resLimit, resSort);
+    const data = await metrics.fetch('movie.browse', () => fetchPage('movies', currentPage, resLimit, resSort));
     const items = (data?.data || []).map(mapApiItem).filter(Boolean);
 
     if (items.length === 0) break;
@@ -91,9 +92,9 @@ async function getBrowse(page, limit, sort) {
  */
 async function getTrending() {
   const key = 'trending';
-  if (cache.isHit(key, CACHE_TTL.trending)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.trending)) { metrics.recordHit('movie.trending'); return cache.get(key); }
 
-  const data = await httpClient.getJson('/api/homepage');
+  const data = await metrics.fetch('movie.trending', () => httpClient.getJson('/api/homepage'));
   if (!data || !data.above) return [];
 
   const section = data.above.find(s => s.title && s.title.toLowerCase().includes('trending')) || data.above[0];
@@ -110,9 +111,9 @@ async function getTrending() {
  */
 async function getTrendingPage(page) {
   const key = `trending.page.${page}`;
-  if (cache.isHit(key, CACHE_TTL.trending)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.trending)) { metrics.recordHit('movie.trendingPage'); return cache.get(key); }
 
-  const data = await httpClient.getJson(`/api/movies?page=${page}&limit=${TRENDING_DEFAULTS.LIMIT}&sort=${TRENDING_DEFAULTS.SORT}`);
+  const data = await metrics.fetch('movie.trendingPage', () => httpClient.getJson(`/api/movies?page=${page}&limit=${TRENDING_DEFAULTS.LIMIT}&sort=${TRENDING_DEFAULTS.SORT}`));
   const items = (data?.data || []).map(mapApiItem).filter(Boolean);
 
 
@@ -129,9 +130,9 @@ async function getTrendingPage(page) {
  */
 async function getDetail(slug) {
   const key = `movie.detail.${slug}`;
-  if (cache.isHit(key, CACHE_TTL.detail)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.detail)) { metrics.recordHit('movie.detail'); return cache.get(key); }
 
-  const data = await httpClient.getJson(`/api/movies/${slug}`);
+  const data = await metrics.fetch('movie.detail', () => httpClient.getJson(`/api/movies/${slug}`));
   const detail = mapApiDetail(data);
 
   if (!detail.title) {
@@ -170,9 +171,9 @@ async function getDetail(slug) {
  */
 async function getStreamData(slug) {
   const key = `movie.stream.${slug}`;
-  if (cache.isHit(key, CACHE_TTL.stream)) return cache.get(key);
+  if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit('movie.stream'); return cache.get(key); }
 
-  const result = await httpClient.getStreamData(slug, 'movie');
+  const result = await metrics.fetch('movie.stream', () => httpClient.getStreamData(slug));
   if (result.streamUrl) cache.set(key, result);
   return result;
 }
