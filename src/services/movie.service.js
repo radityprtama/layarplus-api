@@ -12,6 +12,12 @@ const TRENDING_DEFAULTS = {
   SORT: 'popularityScore',
 };
 
+const CATEGORY_BROWSE = 'movie.browse';
+const CATEGORY_TRENDING = 'movie.trending';
+const CATEGORY_TRENDING_PAGE = 'movie.trendingPage';
+const CATEGORY_DETAIL = 'movie.detail';
+const CATEGORY_STREAM = 'movie.stream';
+
 function fetchPage(resource, page, limit, sort) {
   return httpClient.getJson(`/api/${resource}?page=${page}&limit=${limit}&sort=${sort || 'createdAt'}`);
 }
@@ -33,58 +39,52 @@ async function getBrowse(page, limit, sort) {
 
   if (page != null) {
     const key = `movie.browse.p${page}.l${resLimit}.s${resSort}`;
-    if (cache.isHit(key, CACHE_TTL.page)) { metrics.recordHit('movie.browse'); return cache.get(key); }
-
-    const data = await metrics.fetch('movie.browse', () => fetchPage('movies', Number(page), resLimit, resSort));
-    const items = (data?.data || []).map(mapApiItem).filter(Boolean);
-    const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
-
-    const result = {
-      items,
-      pagination: {
-        currentPage: Number(page),
-        totalPages: Number(upstreamPages),
-        hasNext: Number(page) < Number(upstreamPages),
-      },
-    };
-
-    cache.set(key, result);
-    return result;
+    return cache.readThrough(key, CACHE_TTL.page, CATEGORY_BROWSE, async () => {
+      const data = await fetchPage('movies', Number(page), resLimit, resSort);
+      const items = (data?.data || []).map(mapApiItem).filter(Boolean);
+      const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
+      return {
+        items,
+        pagination: {
+          currentPage: Number(page),
+          totalPages: Number(upstreamPages),
+          hasNext: Number(page) < Number(upstreamPages),
+        },
+      };
+    });
   }
 
   const allKey = 'movie.browse.all';
-  if (cache.isHit(allKey, CACHE_TTL.page)) { metrics.recordHit('movie.browse'); return cache.get(allKey); }
+  return cache.readThrough(allKey, CACHE_TTL.page, CATEGORY_BROWSE, async () => {
+    const allItems = [];
+    let currentPage = 1;
+    let totalPages = 1;
 
-  const allItems = [];
-  let currentPage = 1;
-  let totalPages = 1;
+    while (currentPage <= 100) {
+      const data = await metrics.fetch(CATEGORY_BROWSE,
+        () => fetchPage('movies', currentPage, resLimit, resSort));
+      const items = (data?.data || []).map(mapApiItem).filter(Boolean);
 
-  while (currentPage <= 100) {
-    const data = await metrics.fetch('movie.browse', () => fetchPage('movies', currentPage, resLimit, resSort));
-    const items = (data?.data || []).map(mapApiItem).filter(Boolean);
+      if (items.length === 0) break;
 
-    if (items.length === 0) break;
+      allItems.push(...items);
 
-    allItems.push(...items);
+      if (data?.totalPages) {
+        totalPages = Number(data.totalPages);
+        if (currentPage >= totalPages) break;
+      } else if (data?.pagination?.totalPages) {
+        totalPages = Number(data.pagination.totalPages);
+        if (currentPage >= totalPages) break;
+      }
 
-    if (data?.totalPages) {
-      totalPages = Number(data.totalPages);
-      if (currentPage >= totalPages) break;
-    } else if (data?.pagination?.totalPages) {
-      totalPages = Number(data.pagination.totalPages);
-      if (currentPage >= totalPages) break;
+      currentPage++;
     }
 
-    currentPage++;
-  }
-
-  const result = {
-    items: allItems,
-    pagination: { currentPage: 1, totalPages: 1, hasNext: false },
-  };
-
-  cache.set(allKey, result);
-  return result;
+    return {
+      items: allItems,
+      pagination: { currentPage: 1, totalPages: 1, hasNext: false },
+    };
+  });
 }
 
 /**
@@ -92,17 +92,12 @@ async function getBrowse(page, limit, sort) {
  * @returns {Promise<Array>}
  */
 async function getTrending() {
-  const key = 'trending';
-  if (cache.isHit(key, CACHE_TTL.trending)) { metrics.recordHit('movie.trending'); return cache.get(key); }
-
-  const data = await metrics.fetch('movie.trending', () => httpClient.getJson('/api/homepage'));
-  if (!data || !data.above) return [];
-
-  const section = data.above.find(s => s.title && s.title.toLowerCase().includes('trending')) || data.above[0];
-  const items = (section?.data || []).map(mapApiItem).filter(i => i.type === 'movie');
-
-  cache.set(key, items);
-  return items;
+  return cache.readThrough('trending', CACHE_TTL.trending, CATEGORY_TRENDING, async () => {
+    const data = await httpClient.getJson('/api/homepage');
+    if (!data || !data.above) return [];
+    const section = data.above.find(s => s.title && s.title.toLowerCase().includes('trending')) || data.above[0];
+    return (section?.data || []).map(mapApiItem).filter(i => i.type === 'movie');
+  });
 }
 
 /**
@@ -111,15 +106,16 @@ async function getTrending() {
  * @returns {Promise<Array>}
  */
 async function getTrendingPage(page) {
-  const key = `trending.page.${page}`;
-  if (cache.isHit(key, CACHE_TTL.trending)) { metrics.recordHit('movie.trendingPage'); return cache.get(key); }
-
-  const data = await metrics.fetch('movie.trendingPage', () => httpClient.getJson(`/api/movies?page=${page}&limit=${TRENDING_DEFAULTS.LIMIT}&sort=${TRENDING_DEFAULTS.SORT}`));
-  const items = (data?.data || []).map(mapApiItem).filter(Boolean);
-
-
-  cache.set(key, items);
-  return items;
+  return cache.readThrough(
+    `trending.page.${page}`,
+    CACHE_TTL.trending,
+    CATEGORY_TRENDING_PAGE,
+    async () => {
+      const data = await httpClient.getJson(
+        `/api/movies?page=${page}&limit=${TRENDING_DEFAULTS.LIMIT}&sort=${TRENDING_DEFAULTS.SORT}`);
+      return (data?.data || []).map(mapApiItem).filter(Boolean);
+    }
+  );
 }
 
 /**
@@ -130,20 +126,18 @@ async function getTrendingPage(page) {
  * @returns {Promise<Object>}
  */
 async function getDetail(slug) {
-  const key = `movie.detail.${slug}`;
-  if (cache.isHit(key, CACHE_TTL.detail)) { metrics.recordHit('movie.detail'); return cache.get(key); }
+  return cache.readThrough(`movie.detail.${slug}`, CACHE_TTL.detail, CATEGORY_DETAIL, async () => {
+    const data = await httpClient.getJson(`/api/movies/${slug}`);
+    const detail = mapApiDetail(data);
 
-  const data = await metrics.fetch('movie.detail', () => httpClient.getJson(`/api/movies/${slug}`));
-  const detail = mapApiDetail(data);
+    if (!detail.title) {
+      const err = new Error('Movie not found');
+      err.status = 404;
+      throw err;
+    }
 
-  if (!detail.title) {
-    const err = new Error('Movie not found');
-    err.status = 404;
-    throw err;
-  }
-
-  cache.set(key, detail);
-  return detail;
+    return detail;
+  });
 }
 
 /**
@@ -158,7 +152,7 @@ async function getDetail(slug) {
  *   6. POST redeemUrl (majorplay.net)       → config URL + subtitles
  *
  * IMPORTANT: result.expiresAt (from step 5/6) is a short-lived signed URL.
- * Never cache past its expiry — see Phase 1 of the Redis audit / stream TTL fix.
+ * Never cache past its expiry — TTL is computed from expiresAt below.
  *
  * @param {string} slug - e.g. "salmokji-whispering-water-2026"
  * @returns {Promise<{
@@ -173,9 +167,11 @@ async function getDetail(slug) {
  */
 async function getStreamData(slug) {
   const key = `movie.stream.${slug}`;
-  if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit('movie.stream'); return cache.get(key); }
+  if (cache.isHit(key, CACHE_TTL.stream)) { metrics.recordHit(CATEGORY_STREAM); return cache.get(key); }
 
-  const result = await metrics.fetch('movie.stream', () => httpClient.getStreamData(slug));
+  // Single-flight the upstream chain; honour expiresAt on cache write.
+  const result = await metrics.fetch(CATEGORY_STREAM,
+    () => cache.singleFlight(key, () => httpClient.getStreamData(slug)));
   if (result.streamUrl) {
     const ttlMs = effectiveStreamTtlMs(CACHE_TTL.stream, result.expiresAt);
     if (ttlMs > 0) cache.set(key, result, { ttlMs });

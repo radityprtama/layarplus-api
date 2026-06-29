@@ -220,4 +220,110 @@ describe('CacheService', () => {
       expect(ttlMs).toBe(9 * 60 * 1000);
     });
   });
+
+  // ── readThrough ──────────────────────────────────────────────────────────
+
+  describe('readThrough()', () => {
+    it('returns the cached value and skips the fetcher on hit', async () => {
+      cache.set('k', { cached: true });
+      const fetcher = jest.fn();
+      const result = await cache.readThrough('k', 1, null, fetcher);
+      expect(result).toEqual({ cached: true });
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+
+    it('invokes the fetcher on miss, caches a non-null result, and returns it', async () => {
+      const fetcher = jest.fn().mockResolvedValue({ fresh: 1 });
+      const result = await cache.readThrough('k', 1, null, fetcher);
+      expect(result).toEqual({ fresh: 1 });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(cache.get('k')).toEqual({ fresh: 1 });
+    });
+
+    it('does not cache a null result', async () => {
+      const fetcher = jest.fn().mockResolvedValue(null);
+      const result = await cache.readThrough('k', 1, null, fetcher);
+      expect(result).toBeNull();
+      expect(cache.get('k')).toBeNull();
+    });
+
+    it('coalesces concurrent misses on the same key into a single fetcher call', async () => {
+      let resolveFetch;
+      const fetcher = jest.fn(() => new Promise(r => { resolveFetch = r; }));
+      const p1 = cache.readThrough('shared', 1, null, fetcher);
+      const p2 = cache.readThrough('shared', 1, null, fetcher);
+      const p3 = cache.readThrough('shared', 1, null, fetcher);
+      // fetcher invoked exactly once for all three concurrent callers.
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      resolveFetch({ value: 'shared' });
+      const results = await Promise.all([p1, p2, p3]);
+      expect(results).toEqual([{ value: 'shared' }, { value: 'shared' }, { value: 'shared' }]);
+      // The cached value is now available for the next caller.
+      expect(cache.get('shared')).toEqual({ value: 'shared' });
+    });
+
+    it('clears the in-flight slot on rejection so the next caller retries', async () => {
+      const fetcher = jest.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce('ok');
+      await expect(cache.readThrough('k', 1, null, fetcher)).rejects.toThrow('boom');
+      // In-flight must not be poisoned — next call retries cleanly.
+      expect(cache._inFlight.has('k')).toBe(false);
+      const result = await cache.readThrough('k', 1, null, fetcher);
+      expect(result).toBe('ok');
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('a different key runs an independent fetcher call', async () => {
+      const fA = jest.fn().mockResolvedValue('A');
+      const fB = jest.fn().mockResolvedValue('B');
+      const [a, b] = await Promise.all([
+        cache.readThrough('a', 1, null, fA),
+        cache.readThrough('b', 1, null, fB),
+      ]);
+      expect(a).toBe('A');
+      expect(b).toBe('B');
+      expect(cache.get('a')).toBe('A');
+      expect(cache.get('b')).toBe('B');
+    });
+  });
+
+  // ── singleFlight ─────────────────────────────────────────────────────────
+
+  describe('singleFlight()', () => {
+    it('returns the in-flight promise for concurrent callers', async () => {
+      let resolveFetch;
+      const fn = jest.fn(() => new Promise(r => { resolveFetch = r; }));
+      const p1 = cache.singleFlight('k', fn);
+      const p2 = cache.singleFlight('k', fn);
+      expect(fn).toHaveBeenCalledTimes(1);
+      resolveFetch('done');
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1).toBe('done');
+      expect(r2).toBe('done');
+    });
+
+    it('clears the in-flight slot on rejection', async () => {
+      const fn = jest.fn().mockRejectedValue(new Error('nope'));
+      await expect(cache.singleFlight('k', fn)).rejects.toThrow('nope');
+      expect(cache._inFlight.has('k')).toBe(false);
+    });
+
+    it('does not interact with the cache store (caller manages writes)', async () => {
+      const fn = jest.fn().mockResolvedValue('manual-write');
+      const result = await cache.singleFlight('k', fn);
+      expect(result).toBe('manual-write');
+      expect(cache.get('k')).toBeNull();
+    });
+  });
+
+  describe('clear()', () => {
+    it('also drops in-flight entries', async () => {
+      let resolveFetch;
+      cache.singleFlight('k', () => new Promise(r => { resolveFetch = r; }));
+      expect(cache._inFlight.has('k')).toBe(true);
+      cache.clear();
+      expect(cache._inFlight.has('k')).toBe(false);
+      // Resolving the dangling promise after clear must not crash.
+      resolveFetch('late');
+    });
+  });
 });

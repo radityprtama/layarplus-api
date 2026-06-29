@@ -5,11 +5,8 @@ jest.mock('../../src/lib/httpClient', () => ({
   getStreamData:         jest.fn(),
   getEpisodeStreamData:  jest.fn(),
 }));
-jest.mock('../../src/lib/cacheService', () => ({
-  isHit: jest.fn(),
-  get:   jest.fn(),
-  set:   jest.fn(),
-}));
+jest.mock('../../src/lib/cacheService',
+  () => require('../fixtures/cacheMock')());
 
 const request    = require('supertest');
 const createApp  = require('../../src/app');

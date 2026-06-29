@@ -2,7 +2,6 @@
 
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
-const metrics    = require('../lib/metrics');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem } = require('../lib/scraper');
 
@@ -13,27 +12,22 @@ const { mapApiItem } = require('../lib/scraper');
  * @returns {Promise<Object>}
  */
 async function getLeaderboard() {
-  const key = 'leaderboard';
-  if (cache.isHit(key, CACHE_TTL.leaderboard)) { metrics.recordHit('leaderboard'); return cache.get(key); }
+  return cache.readThrough('leaderboard', CACHE_TTL.leaderboard, 'leaderboard', async () => {
+    const data = await httpClient.getJson('/api/leaderboard');
+    if (!data) return {};
 
-  const data = await metrics.fetch('leaderboard', () => httpClient.getJson('/api/leaderboard'));
-  
-  if (!data) return {};
-
-  const items = {
-    month: data.month,
-    updatedAt: data.updatedAt,
-    topMovies: (data.topMovies || []).map(mapApiItem),
-    topSeries: (data.topSeries || []).map(mapApiItem),
-    topWatchlisted: (data.topWatchlisted || []).map(mapApiItem),
-    topFavourited: (data.topFavourited || []).map(mapApiItem),
-    // Pass through reviews and comments directly if they exist
-    topReviews: data.topReviews || [],
-    topComments: data.topComments || []
-  };
-
-  cache.set(key, items);
-  return items;
+    return {
+      month: data.month,
+      updatedAt: data.updatedAt,
+      topMovies: (data.topMovies || []).map(mapApiItem),
+      topSeries: (data.topSeries || []).map(mapApiItem),
+      topWatchlisted: (data.topWatchlisted || []).map(mapApiItem),
+      topFavourited: (data.topFavourited || []).map(mapApiItem),
+      // Pass through reviews and comments directly if they exist
+      topReviews: data.topReviews || [],
+      topComments: data.topComments || []
+    };
+  });
 }
 
 module.exports = { getLeaderboard };
