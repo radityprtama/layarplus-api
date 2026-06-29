@@ -17,6 +17,10 @@ const errorHandler = require('./middleware/errorHandler');
 function createApp() {
   const app = express();
 
+  // Trust the first proxy in front of the app (Nginx, Caddy, Traefik)
+  // so that req.ip and geoip-lite see the real client IP.
+  app.set('trust proxy', 1);
+
   // ── API Documentation (Scalar) ──────────────────────────────────────────
   try {
     const swaggerDocument = require('../swagger_output.json');
