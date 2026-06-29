@@ -5,23 +5,29 @@ const cache      = require('../lib/cacheService');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, ensureContentType } = require('../lib/scraper');
 
+const UPSTREAM_HOMEPAGE = () => httpClient.getJson('/api/homepage');
+
+function pickSection(above, predicate, fallbackIndex) {
+  return above.find(predicate) || above[fallbackIndex];
+}
+
+function mapSectionItems(section) {
+  return (section?.data || []).map(mapApiItem).filter(Boolean);
+}
+
 /**
  * Fetch and parse featured movies from the upstream homepage.
  * Results are cached for CACHE_TTL.featured hours.
  * @returns {Promise<Array>}
  */
 async function getFeatured() {
-  const key = 'featured';
-  if (cache.isHit(key, CACHE_TTL.featured)) return cache.get(key);
-
-  const data = await httpClient.getJson('/api/homepage');
-  if (!data || !data.above) return [];
-  
-  const section = data.above.find(s => s.title && s.title.toLowerCase().includes('featured')) || data.above[0];
-  const items = (section?.data || []).map(mapApiItem).filter(Boolean);
-  
-  cache.set(key, items);
-  return items;
+  return cache.readThrough('featured', CACHE_TTL.featured, 'featured', async () => {
+    const data = await UPSTREAM_HOMEPAGE();
+    if (!data || !data.above) return [];
+    const section = pickSection(data.above,
+      s => s.title && s.title.toLowerCase().includes('featured'), 0);
+    return mapSectionItems(section);
+  });
 }
 
 /**
@@ -30,17 +36,13 @@ async function getFeatured() {
  * @returns {Promise<Array>}
  */
 async function getCinemaxxi() {
-  const key = 'cinemaxxi';
-  if (cache.isHit(key, CACHE_TTL.cinemaxxi)) return cache.get(key);
-
-  const data = await httpClient.getJson('/api/homepage');
-  if (!data || !data.above) return [];
-
-  const section = data.above.find(s => s.title && s.title.toLowerCase().includes('recently added movies')) || data.above[1];
-  const items = (section?.data || []).map(mapApiItem).filter(Boolean);
-  
-  cache.set(key, items);
-  return items;
+  return cache.readThrough('cinemaxxi', CACHE_TTL.cinemaxxi, 'cinemaxxi', async () => {
+    const data = await UPSTREAM_HOMEPAGE();
+    if (!data || !data.above) return [];
+    const section = pickSection(data.above,
+      s => s.title && s.title.toLowerCase().includes('recently added movies'), 1);
+    return mapSectionItems(section);
+  });
 }
 
 /**
@@ -49,17 +51,12 @@ async function getCinemaxxi() {
  * @returns {Promise<Array>}
  */
 async function getHome() {
-  const key = 'home.all';
-  if (cache.isHit(key, CACHE_TTL.home)) return cache.get(key);
-
-  const data = await httpClient.getJson('/api/homepage');
-  if (!data) return [];
-
-  const allSections = [...(data.above || []), ...(data.below || [])];
-  const items = allSections.flatMap(s => (s.data || []).map(mapApiItem)).filter(Boolean);
-  
-  cache.set(key, items);
-  return items;
+  return cache.readThrough('home.all', CACHE_TTL.home, 'home.all', async () => {
+    const data = await UPSTREAM_HOMEPAGE();
+    if (!data) return [];
+    const allSections = [...(data.above || []), ...(data.below || [])];
+    return allSections.flatMap(s => (s.data || []).map(mapApiItem)).filter(Boolean);
+  });
 }
 
 /**
@@ -68,42 +65,37 @@ async function getHome() {
  * @returns {Promise<Object>}
  */
 async function getHomeSections() {
-  const key = 'home.sections';
-  if (cache.isHit(key, CACHE_TTL.home)) return cache.get(key);
-
-  const data = await httpClient.getJson('/api/homepage');
-  if (!data) return {};
-
-  const sections = {};
-  const allSections = [...(data.above || []), ...(data.below || [])];
-  
-  for (const s of allSections) {
-    if (!s.title) continue;
-    const items = (s.data || []).map(mapApiItem).filter(Boolean);
-    if (items.length) {
-      sections[s.title] = items;
+  const sections = await cache.readThrough('home.sections', CACHE_TTL.home, 'home.sections', async () => {
+    const data = await UPSTREAM_HOMEPAGE();
+    if (!data) return {};
+    const sectionsOut = {};
+    const allSections = [...(data.above || []), ...(data.below || [])];
+    for (const s of allSections) {
+      if (!s.title) continue;
+      const items = mapSectionItems(s);
+      if (items.length) sectionsOut[s.title] = items;
     }
-  }
+    return sectionsOut;
+  }) || {};
 
   // For trending sections that are imbalanced (e.g. all series, no movies),
   // replace with a mixed feed from upstream browse endpoints so that
   // "Trending Now" contains both movies and TV series.
-  for (const title of Object.keys(sections)) {
-    if (title.toLowerCase().includes('trending')) {
-      const items = sections[title];
-      const hasMovies = items.some(i => i.type === 'movie');
-      const hasSeries = items.some(i => i.type === 'series');
-      if (!hasMovies || !hasSeries) {
+  const enriched = { ...sections };
+  await Promise.all(
+    Object.keys(enriched)
+      .filter(title => title.toLowerCase().includes('trending'))
+      .map(async (title) => {
+        const items = enriched[title];
+        const hasMovies = items.some(i => i.type === 'movie');
+        const hasSeries = items.some(i => i.type === 'series');
+        if (hasMovies && hasSeries) return;
         const mixed = await fetchMixedTrending(items.length);
-        if (mixed.length > 0) {
-          sections[title] = mixed;
-        }
-      }
-    }
-  }
+        if (mixed.length > 0) enriched[title] = mixed;
+      })
+  );
 
-  cache.set(key, sections);
-  return sections;
+  return enriched;
 }
 
 /**
@@ -113,15 +105,21 @@ async function getHomeSections() {
  * @returns {Promise<Array>}
  */
 async function fetchMixedTrending(limit) {
-  const fetchResource = async (resource) => {
-    const json = await httpClient.getJson(`/api/${resource}?country=US&page=1&limit=${limit}&sort=popularityScore`);
-    if (json == null) return null;
-    return Array.isArray(json.data) ? json.data : [];
-  };
+  const fetchResource = (resource, category) =>
+    () => cache.readThrough(
+      `trending.fallback.${resource}`,
+      CACHE_TTL.trending,
+      category,
+      async () => {
+        const json = await httpClient.getJson(
+          `/api/${resource}?country=US&page=1&limit=${limit}&sort=popularityScore`);
+        return json == null ? null : (Array.isArray(json.data) ? json.data : []);
+      }
+    );
 
   const [movieRes, seriesRes] = await Promise.allSettled([
-    fetchResource('movies'),
-    fetchResource('series'),
+    fetchResource('movies', 'trending.movieFallback')(),
+    fetchResource('series', 'trending.seriesFallback')(),
   ]);
 
   const movieOk = movieRes.status === 'fulfilled' && movieRes.value != null;

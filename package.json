@@ -32,7 +32,8 @@
     "dotenv": "^16.0.0",
     "express": "^5.2.1",
     "geoip-lite": "^1.4.10",
-    "helmet": "^4.6.0"
+    "helmet": "^4.6.0",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@scalar/express-api-reference": "^0.10.4",

@@ -18,21 +18,18 @@ const { mapApiItem } = require('../lib/scraper');
 async function search(query, { page, limit, sort } = {}) {
   const normalisedQuery = `${query.trim().toLowerCase()}|p${page || 1}l${limit || 20}s${sort || ''}`;
   const key = `search.${normalisedQuery}`;
-  if (cache.isHit(key, CACHE_TTL.search)) return cache.get(key);
 
-  const params = new URLSearchParams({ q: query.trim() });
-  if (page != null) params.set('page', String(page));
-  if (limit != null) params.set('limit', String(limit));
-  if (sort) params.set('sort', sort);
+  return cache.readThrough(key, CACHE_TTL.search, 'search', async () => {
+    const params = new URLSearchParams({ q: query.trim() });
+    if (page != null) params.set('page', String(page));
+    if (limit != null) params.set('limit', String(limit));
+    if (sort) params.set('sort', sort);
 
-  const data = await httpClient.getJson(`/api/search?${params}`);
-
-  const total = data?.total || 0;
-  const items = (data?.results || []).map(mapApiItem).filter(Boolean);
-
-  const result = { items, total };
-  cache.set(key, result);
-  return result;
+    const data = await httpClient.getJson(`/api/search?${params}`);
+    const total = data?.total || 0;
+    const items = (data?.results || []).map(mapApiItem).filter(Boolean);
+    return { items, total };
+  });
 }
 
 module.exports = { search };

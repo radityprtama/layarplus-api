@@ -317,6 +317,9 @@ async function runStreamTail(playInfoType, playInfoUuid, referer, label) {
     title:       claimData.title      || null,
     durationSec: claimData.durationSec || null,
     maxHeight:   playData.maxHeight   || claimData.maxHeight   || null,
+    // `expiresAt` is the upstream-signed URL expiry (Unix seconds, millis, or null).
+    // The service layer (movie/series.service) honours this when caching — never
+    // cache a stream entry past `expiresAt - 300s`. See Phase 1 stream TTL fix.
     expiresAt:   playData.expiresAt   || null,
   };
 }
