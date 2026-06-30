@@ -1,6 +1,6 @@
 'use strict';
 
-const { mapApiItem, mapApiDetail } = require('../../src/lib/scraper');
+const { mapApiItem, mapApiDetail, normalizeStatus } = require('../../src/lib/scraper');
 
 describe('scraper.js', () => {
 
@@ -282,6 +282,7 @@ describe('scraper.js', () => {
         slug: 'game-of-thrones',
         numberOfSeasons: 8,
         firstAirDate: '2011-04-17',
+        status: 'Ended',
         seasons: [
           {
             name: 'Season 1',
@@ -299,6 +300,7 @@ describe('scraper.js', () => {
         title: 'Game of Thrones',
         year: 2011,
         type: 'series',
+        status: 'Ended',
         logo: null,
         backdrops: null,
         seasons: [
@@ -331,6 +333,106 @@ describe('scraper.js', () => {
         'https://image.tmdb.org/t/p/w1280/bg1.jpg',
         'https://image.tmdb.org/t/p/w1280/bg2.jpg',
       ]);
+    });
+
+    it('maps a returning-series status to Ongoing', () => {
+      const mapped = mapApiDetail({
+        title: 'The Last of Us',
+        slug: 'the-last-of-us',
+        numberOfSeasons: 2,
+        firstAirDate: '2023-01-15',
+        status: 'Returning Series',
+      });
+      expect(mapped.status).toBe('Ongoing');
+    });
+
+    it('normalizes Pilot status to Upcoming', () => {
+      const mapped = mapApiDetail({
+        title: 'Future Show',
+        slug: 'future-show',
+        numberOfSeasons: 1,
+        status: 'Pilot',
+      });
+      expect(mapped.status).toBe('Upcoming');
+    });
+
+    it('sets status to null for movies', () => {
+      const mapped = mapApiDetail({
+        title: 'Interstellar',
+        slug: 'interstellar',
+        releaseDate: '2014-11-05',
+        runtime: 169,
+      });
+      expect(mapped.status).toBeNull();
+    });
+
+    it('sets status to null when upstream status is missing', () => {
+      const mapped = mapApiDetail({
+        title: 'Mystery Series',
+        slug: 'mystery',
+        numberOfSeasons: 1,
+      });
+      expect(mapped.status).toBeNull();
+    });
+
+    it('returns null for unrecognised status values', () => {
+      const mapped = mapApiDetail({
+        title: 'Weird Series',
+        slug: 'weird',
+        numberOfSeasons: 1,
+        status: 'Unknown Status',
+      });
+      expect(mapped.status).toBeNull();
+    });
+  });
+
+  describe('normalizeStatus', () => {
+    it('maps "Returning Series" to "Ongoing"', () => {
+      expect(normalizeStatus('Returning Series')).toBe('Ongoing');
+    });
+
+    it('maps "In Production" to "Ongoing"', () => {
+      expect(normalizeStatus('In Production')).toBe('Ongoing');
+    });
+
+    it('maps "Pilot" to "Upcoming"', () => {
+      expect(normalizeStatus('Pilot')).toBe('Upcoming');
+    });
+
+    it('maps "Ended" to "Ended"', () => {
+      expect(normalizeStatus('Ended')).toBe('Ended');
+    });
+
+    it('maps "Cancelled" (TMDB canonical) to "Ended"', () => {
+      expect(normalizeStatus('Cancelled')).toBe('Ended');
+    });
+
+    it('maps "Canceled" (American spelling) to "Ended"', () => {
+      expect(normalizeStatus('Canceled')).toBe('Ended');
+    });
+
+    it('returns null for "Planned" (not a TMDB status)', () => {
+      expect(normalizeStatus('Planned')).toBeNull();
+    });
+
+    it('returns null for unknown values', () => {
+      expect(normalizeStatus('Rumored')).toBeNull();
+    });
+
+    it('returns null for null', () => {
+      expect(normalizeStatus(null)).toBeNull();
+    });
+
+    it('returns null for undefined', () => {
+      expect(normalizeStatus(undefined)).toBeNull();
+    });
+
+    it('returns null for empty string', () => {
+      expect(normalizeStatus('')).toBeNull();
+    });
+
+    it('trims whitespace before matching', () => {
+      expect(normalizeStatus('  Ended  ')).toBe('Ended');
     });
   });
 });

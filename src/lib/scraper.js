@@ -147,6 +147,50 @@ function mapEpisode(ep, context = {}) {
   };
 }
 
+/**
+ * Normalises a raw upstream/TMDB TV-series status string into one
+ * of three frontend-safe values: "Ongoing", "Upcoming", or "Ended".
+ *
+ * The TMDB TV Bible [1] defines five canonical statuses:
+ *   "Returning Series"  → Ongoing   (airing / new episodes released)
+ *   "In Production"     → Ongoing   (greenlit, not yet premiered)
+ *   "Pilot"             → Upcoming  (pilot not yet picked up to series)
+ *   "Ended"             → Ended     (planned conclusion)
+ *   "Cancelled"         → Ended     (cancelled by the network)
+ *
+ * Additional defensive aliases (not in TMDB proper, but seen on
+ * idlix/scraper sites that may use American spelling):
+ *   "Canceled"          → Ended
+ *
+ * Unrecognised values return null so that the frontend type
+ * (SeriesStatus = "Ongoing" | "Ended" | "Upcoming") is never
+ * violated — any new upstream value must be mapped here first.
+ *
+ * [1]: https://www.themoviedb.org/bible/tv/59f73eb49251416e7100001f
+ *
+ * @param {string|null|undefined} raw
+ * @returns {"Ongoing"|"Upcoming"|"Ended"|null}
+ */
+function normalizeStatus(raw) {
+  if (raw == null) return null;
+
+  const s = String(raw).trim();
+  if (!s) return null;
+  switch (s) {
+    case 'Returning Series':
+    case 'In Production':
+      return 'Ongoing';
+    case 'Pilot':
+      return 'Upcoming';
+    case 'Ended':
+    case 'Cancelled':           // TMDB canonical spelling
+    case 'Canceled':            // defensive — idlix/scrapers may use American spelling
+      return 'Ended';
+    default:
+      return null;              // unrecognised → null (frontend hides badge)
+  }
+}
+
 function mapApiDetail(item) {
   if (!item) return {};
   const isSeries = !!item.numberOfSeasons;
@@ -200,6 +244,7 @@ function mapApiDetail(item) {
     watchUrl: `${BASE_URL}/${endpoint}?play=1`,
     streamUrl: null, // Fetched separately
     keywords: (item.keywords || []).map(k => k.name).filter(Boolean),
+    status: isSeries ? normalizeStatus(item.status) : null,
     recommendations: [], // Can be populated if API provides it
     seasons: isSeries ? (item.seasons || []).map(s => ({
       name: s.name,
@@ -219,4 +264,5 @@ module.exports = {
   mapApiDetail,
   mapEpisode,
   ensureContentType,
+  normalizeStatus,
 };
