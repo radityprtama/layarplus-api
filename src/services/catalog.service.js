@@ -79,19 +79,29 @@ async function getCategoryIndex(category) {
   });
 }
 
-async function getCategoryBrowse(category, value, type, page = 1, limit) {
+async function getCategoryBrowse(category, value, type, page = 1, limit, sort) {
   const resLimit = Number(limit) || 36;
-  const key = buildKey([category, value, type || 'all', `page-${page}`, `limit-${resLimit}`]);
+  const resSort = sort || 'createdAt';
+  const key = buildKey([category, value, type || 'all', `page-${page}`, `limit-${resLimit}`, `sort-${resSort}`]);
   const isSeries = type === 'series';
   const apiPath = isSeries ? '/api/series' : '/api/movies';
-  const qs = `${category}=${value}&page=${page}&limit=${resLimit}&sort=createdAt`;
+  const qs = `${category}=${value}&page=${page}&limit=${resLimit}&sort=${resSort}`;
 
   return cache.readThrough(key, CACHE_TTL.page, `${category}.browse`, async () => {
     const data = await httpClient.getJson(`${apiPath}?${qs}`);
-    return (data?.data || [])
+    const items = (data?.data || [])
       .map(i => ensureContentType(i, isSeries ? 'tv_series' : 'movie'))
       .map(mapApiItem)
       .filter(Boolean);
+    const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
+    return {
+      items,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Number(upstreamPages),
+        hasNext: Number(page) < Number(upstreamPages),
+      },
+    };
   });
 }
 

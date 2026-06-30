@@ -14,11 +14,13 @@ exports.index = async (req, res, next) => {
 
 exports.browse = async (req, res, next) => {
   try {
-    const { value, page = 1 } = req.params;
-    const type = req.query.type === 'movie' || req.query.type === 'series' ? req.query.type : undefined;
+    const { value } = req.params;
+    const page  = Number(req.query.page)  || Number(req.params.page) || 1;
     const limit = req.query.limit;
-    const data = await catalogService.getCategoryBrowse(req.category, value, type, page, limit);
-    success(res, data, { filters: { [req.category]: value, type: type || 'all', page } });
+    const sort  = req.query.sort || undefined;
+    const type  = req.query.type === 'movie' || req.query.type === 'series' ? req.query.type : undefined;
+    const result = await catalogService.getCategoryBrowse(req.category, value, type, page, limit, sort);
+    success(res, result.items, { pagination: result.pagination, filters: { [req.category]: value, type: type || 'all', page } });
   } catch (err) {
     next(err);
   }
@@ -26,10 +28,12 @@ exports.browse = async (req, res, next) => {
 
 exports.browseSeries = async (req, res, next) => {
   try {
-    const { value, page = 1 } = req.params;
+    const { value } = req.params;
+    const page  = Number(req.query.page)  || Number(req.params.page) || 1;
     const limit = req.query.limit;
-    const data = await catalogService.getCategoryBrowse(req.category, value, 'series', page, limit);
-    success(res, data, { filters: { [req.category]: value, type: 'series', page } });
+    const sort  = req.query.sort || undefined;
+    const result = await catalogService.getCategoryBrowse(req.category, value, 'series', page, limit, sort);
+    success(res, result.items, { pagination: result.pagination, filters: { [req.category]: value, type: 'series', page } });
   } catch (err) {
     next(err);
   }
@@ -37,10 +41,12 @@ exports.browseSeries = async (req, res, next) => {
 
 exports.browseMovie = async (req, res, next) => {
   try {
-    const { value, page = 1 } = req.params;
+    const { value } = req.params;
+    const page  = Number(req.query.page)  || Number(req.params.page) || 1;
     const limit = req.query.limit;
-    const data = await catalogService.getCategoryBrowse(req.category, value, 'movie', page, limit);
-    success(res, data, { filters: { [req.category]: value, type: 'movie', page } });
+    const sort  = req.query.sort || undefined;
+    const result = await catalogService.getCategoryBrowse(req.category, value, 'movie', page, limit, sort);
+    success(res, result.items, { pagination: result.pagination, filters: { [req.category]: value, type: 'movie', page } });
   } catch (err) {
     next(err);
   }
