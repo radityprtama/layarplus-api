@@ -41,6 +41,17 @@ module.exports = {
   REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX || 'idlc:',
 
   /**
+   * Homepage curation controls.
+   * HOMEPAGE_BUDGET: maximum number of content rows the homepage will render
+   *                  (excluding hero and continue-watching which are handled
+   *                  client-side).
+   * HOMEPAGE_ROW_SIZE: target number of items per row after cross-row
+   *                    deduplication and refill.
+   */
+  HOMEPAGE_BUDGET: Number(process.env.HOMEPAGE_BUDGET) || 7,
+  HOMEPAGE_ROW_SIZE: Number(process.env.HOMEPAGE_ROW_SIZE) || 20,
+
+  /**
    * Per-category cache TTLs in hours.
    * Each can be overridden via a corresponding CACHE_TTL_* env var.
    */
