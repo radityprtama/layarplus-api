@@ -42,12 +42,12 @@ function mapApiItem(item) {
 
   const posterUrl = isEpisode
     ? src.stillPath
-      ? `https://image.tmdb.org/t/p/w370${src.stillPath}`
+      ? `https://image.tmdb.org/t/p/w342${src.stillPath}`
       : epSeries.posterPath
-        ? `https://image.tmdb.org/t/p/w370${epSeries.posterPath}`
+        ? `https://image.tmdb.org/t/p/w342${epSeries.posterPath}`
         : null
     : src.posterPath
-      ? `https://image.tmdb.org/t/p/w370${src.posterPath}`
+      ? `https://image.tmdb.org/t/p/w342${src.posterPath}`
       : null;
   const backdropUrl = src.backdropPath
     ? `https://image.tmdb.org/t/p/w1280${src.backdropPath}`
@@ -130,13 +130,13 @@ function mapEpisode(ep, context = {}) {
     ? `https://image.tmdb.org/t/p/w780${ep.stillPath}`
     : null;
   const seasonPosterUrl = seasonPosterPath
-    ? `https://image.tmdb.org/t/p/w370${seasonPosterPath}`
+    ? `https://image.tmdb.org/t/p/w342${seasonPosterPath}`
     : null;
   const seriesBackdropUrl = seriesBackdropPath
     ? `https://image.tmdb.org/t/p/w1280${seriesBackdropPath}`
     : null;
   const seriesPosterUrl = seriesPosterPath
-    ? `https://image.tmdb.org/t/p/w370${seriesPosterPath}`
+    ? `https://image.tmdb.org/t/p/w342${seriesPosterPath}`
     : null;
 
   return {
@@ -211,7 +211,7 @@ function mapApiDetail(item) {
   }
 
   const posterUrl = item.posterPath
-    ? `https://image.tmdb.org/t/p/w370${item.posterPath}`
+    ? `https://image.tmdb.org/t/p/w342${item.posterPath}`
     : null;
   const backdropUrl = item.backdropPath
     ? `https://image.tmdb.org/t/p/w1280${item.backdropPath}`
