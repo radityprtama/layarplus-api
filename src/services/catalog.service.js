@@ -80,6 +80,12 @@ async function getCategoryIndex(category) {
 }
 
 async function getCategoryBrowse(category, value, type, page = 1, limit, sort) {
+  // Network pages: use cached index instead of upstream (which ignores network= param)
+  if (category === 'network') {
+    const networkIndex = require('./networkIndex.service');
+    return networkIndex.getNetworkItems(value, Number(page), Number(limit) || 36);
+  }
+
   const resLimit = Number(limit) || 36;
   const resSort = sort || 'createdAt';
   const key = buildKey([category, value, type || 'all', `page-${page}`, `limit-${resLimit}`, `sort-${resSort}`]);

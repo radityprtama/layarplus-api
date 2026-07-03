@@ -131,6 +131,29 @@ async function getDetail(slug) {
       throw err;
     }
 
+    // Phase 4 enrichment: if upstream didn't return networks but we have a
+    // TMDB ID, try TMDB directly. Best-effort, never blocks the response.
+    if ((!detail.networks || !detail.networks.length) && detail.tmdbId) {
+      try {
+        const tmdb = require('../lib/tmdbClient');
+        const enriched = await tmdb.getTvNetworks(detail.tmdbId);
+        if (enriched && enriched.networks) {
+          detail.networks = enriched.networks.map((n) => ({
+            id: n.id,
+            name: n.name,
+            logoPath: n.logo_path
+              ? `https://image.tmdb.org/t/p/w200${n.logo_path}`
+              : null,
+            originCountry: n.origin_country || null,
+          }));
+          // ponytail: production_companies enrichment available here too
+          // if needed — add a `detail.productionCompanies` branch.
+        }
+      } catch {
+        /* TMDB enrichment failed — serve upstream data as-is */
+      }
+    }
+
     // ponytail: episodes live at a separate endpoint per season — fetch in
     // parallel through the per-season cache so each season is independently
     // cacheable and the upstream cost is single-flight coalesced.
@@ -151,6 +174,14 @@ async function getDetail(slug) {
           }
         })
       );
+    }
+
+    // Notify network index so it warms up without a full rebuild
+    try {
+      const ni = require('./networkIndex.service');
+      ni.onDetailCached(detail);
+    } catch {
+      /* network index not ready — next rebuild picks this up */
     }
 
     return detail;

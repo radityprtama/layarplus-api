@@ -15,6 +15,13 @@ module.exports = {
   SILENTIUM_API_URL: process.env.SILENTIUM_API_URL || "http://localhost:8191",
 
   /**
+   * TMDB API key for metadata enrichment (networks, production companies).
+   * Required only when the upstream response lacks network data for a title.
+   * Get one free at https://www.themoviedb.org/settings/api
+   */
+  TMDB_API_KEY: process.env.TMDB_API_KEY || '',
+
+  /**
    * Feature flag for location-aware trending.
    * Set to 'false' to disable GeoIP detection (always uses US).
    */

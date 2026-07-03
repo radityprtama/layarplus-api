@@ -233,6 +233,32 @@ function mapApiDetail(item) {
     runtime = `PT${runtimeMinutes}M`;
   }
 
+  // ponytail: upstream returns networks (series) and productionCompanies
+  // (both) in detail responses. Previously discarded — now preserved for
+  // network index construction and frontend display.
+  const rawNetworks = item.networks || null;
+  const networks = Array.isArray(rawNetworks)
+    ? rawNetworks.map((n) => ({
+        id: n.id,
+        name: n.name,
+        logoPath: n.logo_path
+          ? `https://image.tmdb.org/t/p/w200${n.logo_path}`
+          : null,
+        originCountry: n.origin_country || null,
+      }))
+    : null;
+
+  const rawCompanies = item.productionCompanies || null;
+  const productionCompanies = Array.isArray(rawCompanies)
+    ? rawCompanies.map((c) => ({
+        id: c.id,
+        name: c.name,
+        logoPath: c.logo_path
+          ? `https://image.tmdb.org/t/p/w200${c.logo_path}`
+          : null,
+      }))
+    : null;
+
   return {
     title: item.title || "",
     slug: item.slug || null,
@@ -278,6 +304,10 @@ function mapApiDetail(item) {
           ),
         }))
       : null,
+    // Preserved metadata for network index & frontend
+    tmdbId: item.tmdbId || null,
+    networks,
+    productionCompanies,
   };
 }
 
