@@ -637,7 +637,7 @@ Interactive docs available at [`http://localhost:3000/docs`](http://localhost:30
 | `originalTitle` | string | Original title |
 | `year` | number/null | Release year |
 | `type` | string | `"movie"` or `"series"` |
-| `poster` | string/null | TMDB poster (w300) |
+| `poster` | string/null | TMDB poster (w370) |
 | `backdrop` | string/null | TMDB backdrop (w1280) |
 | `logo` | string/null | TMDB logo/title treatment (w500) |
 | `slug` | string | URL identifier |

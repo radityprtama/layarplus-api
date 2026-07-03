@@ -1,6 +1,6 @@
-'use strict';
+"use strict";
 
-const { BASE_URL } = require('../config/env');
+const { BASE_URL } = require("../config/env");
 
 /**
  * Maps a native JSON API item from the upstream into our standardized schema.
@@ -19,16 +19,19 @@ function mapApiItem(item) {
   const src = item.content || item;
   if (!src) return null;
 
-  const rawContentType = item.contentType || src.contentType || '';
-  const isEpisode = rawContentType === 'episode';
-  const isSeries = isEpisode || rawContentType === 'series' || rawContentType === 'tv_series';
-  const epSeries = isEpisode ? (src.series || {}) : {};
+  const rawContentType = item.contentType || src.contentType || "";
+  const isEpisode = rawContentType === "episode";
+  const isSeries =
+    isEpisode || rawContentType === "series" || rawContentType === "tv_series";
+  const epSeries = isEpisode ? src.series || {} : {};
 
-  const slug = isEpisode ? (epSeries.slug || null) : src.slug;
-  const endpoint = slug ? `${isSeries ? 'series' : 'movie'}/${slug}` : null;
+  const slug = isEpisode ? epSeries.slug || null : src.slug;
+  const endpoint = slug ? `${isSeries ? "series" : "movie"}/${slug}` : null;
 
   let year = null;
-  const dateStr = isEpisode ? epSeries.firstAirDate : (src.releaseDate || src.firstAirDate);
+  const dateStr = isEpisode
+    ? epSeries.firstAirDate
+    : src.releaseDate || src.firstAirDate;
   if (dateStr) {
     year = parseInt(String(dateStr).substring(0, 4), 10) || null;
   }
@@ -38,14 +41,14 @@ function mapApiItem(item) {
   }
 
   const posterUrl = isEpisode
-    ? (src.stillPath
-        ? `https://image.tmdb.org/t/p/w300${src.stillPath}`
-        : epSeries.posterPath
-          ? `https://image.tmdb.org/t/p/w300${epSeries.posterPath}`
-          : null)
-    : (src.posterPath
-        ? `https://image.tmdb.org/t/p/w300${src.posterPath}`
-        : null);
+    ? src.stillPath
+      ? `https://image.tmdb.org/t/p/w370${src.stillPath}`
+      : epSeries.posterPath
+        ? `https://image.tmdb.org/t/p/w370${epSeries.posterPath}`
+        : null
+    : src.posterPath
+      ? `https://image.tmdb.org/t/p/w370${src.posterPath}`
+      : null;
   const backdropUrl = src.backdropPath
     ? `https://image.tmdb.org/t/p/w1280${src.backdropPath}`
     : null;
@@ -61,10 +64,10 @@ function mapApiItem(item) {
   }
 
   return {
-    title: isEpisode ? (src.name || '') : (src.title || ''),
-    originalTitle: isEpisode ? (epSeries.title || '') : (src.title || ''),
+    title: isEpisode ? src.name || "" : src.title || "",
+    originalTitle: isEpisode ? epSeries.title || "" : src.title || "",
     year,
-    type: isSeries ? 'series' : 'movie',
+    type: isSeries ? "series" : "movie",
     quality: src.quality || null,
     rating: src.voteAverage ? parseFloat(src.voteAverage) : null,
     season,
@@ -94,7 +97,7 @@ function mapApiItem(item) {
  * @param {string}   [fallbackType='tv_series'] - Type to assign when missing.
  * @returns {Object} Item with guaranteed contentType.
  */
-function ensureContentType(item, fallbackType = 'tv_series') {
+function ensureContentType(item, fallbackType = "tv_series") {
   if (!item || item.contentType) return item;
   return { ...item, contentType: fallbackType };
 }
@@ -124,23 +127,28 @@ function mapEpisode(ep, context = {}) {
   const { seasonPosterPath, seriesBackdropPath, seriesPosterPath } = context;
 
   const stillUrl = ep.stillPath
-    ? `https://image.tmdb.org/t/p/w300${ep.stillPath}`
+    ? `https://image.tmdb.org/t/p/w780${ep.stillPath}`
     : null;
   const seasonPosterUrl = seasonPosterPath
-    ? `https://image.tmdb.org/t/p/w300${seasonPosterPath}`
+    ? `https://image.tmdb.org/t/p/w370${seasonPosterPath}`
     : null;
   const seriesBackdropUrl = seriesBackdropPath
     ? `https://image.tmdb.org/t/p/w1280${seriesBackdropPath}`
     : null;
   const seriesPosterUrl = seriesPosterPath
-    ? `https://image.tmdb.org/t/p/w300${seriesPosterPath}`
+    ? `https://image.tmdb.org/t/p/w370${seriesPosterPath}`
     : null;
 
   return {
     episodeNumber: ep.episodeNumber,
     title: ep.name || ep.title || `Episode ${ep.episodeNumber}`,
     overview: ep.overview || null,
-    thumbnail: stillUrl || seasonPosterUrl || seriesBackdropUrl || seriesPosterUrl || null,
+    thumbnail:
+      stillUrl ||
+      seasonPosterUrl ||
+      seriesBackdropUrl ||
+      seriesPosterUrl ||
+      null,
     runtime: ep.runtime ? parseInt(ep.runtime, 10) : null,
     airDate: ep.airDate || null,
     voteAverage: ep.voteAverage ? parseFloat(ep.voteAverage) : null,
@@ -177,24 +185,24 @@ function normalizeStatus(raw) {
   const s = String(raw).trim();
   if (!s) return null;
   switch (s) {
-    case 'Returning Series':
-    case 'In Production':
-      return 'Ongoing';
-    case 'Pilot':
-      return 'Upcoming';
-    case 'Ended':
-    case 'Cancelled':           // TMDB canonical spelling
-    case 'Canceled':            // defensive — idlix/scrapers may use American spelling
-      return 'Ended';
+    case "Returning Series":
+    case "In Production":
+      return "Ongoing";
+    case "Pilot":
+      return "Upcoming";
+    case "Ended":
+    case "Cancelled": // TMDB canonical spelling
+    case "Canceled": // defensive — idlix/scrapers may use American spelling
+      return "Ended";
     default:
-      return null;              // unrecognised → null (frontend hides badge)
+      return null; // unrecognised → null (frontend hides badge)
   }
 }
 
 function mapApiDetail(item) {
   if (!item) return {};
   const isSeries = !!item.numberOfSeasons;
-  const endpoint = `${isSeries ? 'series' : 'movie'}/${item.slug}`;
+  const endpoint = `${isSeries ? "series" : "movie"}/${item.slug}`;
 
   let year = null;
   const dateStr = item.releaseDate || item.firstAirDate;
@@ -202,12 +210,20 @@ function mapApiDetail(item) {
     year = parseInt(String(dateStr).substring(0, 4), 10) || null;
   }
 
-  const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w300${item.posterPath}` : null;
-  const backdropUrl = item.backdropPath ? `https://image.tmdb.org/t/p/w1280${item.backdropPath}` : null;
-  const logoUrl = item.logoPath ? `https://image.tmdb.org/t/p/w500${item.logoPath}` : null;
+  const posterUrl = item.posterPath
+    ? `https://image.tmdb.org/t/p/w370${item.posterPath}`
+    : null;
+  const backdropUrl = item.backdropPath
+    ? `https://image.tmdb.org/t/p/w1280${item.backdropPath}`
+    : null;
+  const logoUrl = item.logoPath
+    ? `https://image.tmdb.org/t/p/w500${item.logoPath}`
+    : null;
 
   const backdrops = Array.isArray(item.backdrops)
-    ? item.backdrops.filter(Boolean).map(p => `https://image.tmdb.org/t/p/w1280${p}`)
+    ? item.backdrops
+        .filter(Boolean)
+        .map((p) => `https://image.tmdb.org/t/p/w1280${p}`)
     : null;
 
   let runtime = null;
@@ -218,10 +234,10 @@ function mapApiDetail(item) {
   }
 
   return {
-    title: item.title || '',
+    title: item.title || "",
     slug: item.slug || null,
     year,
-    type: isSeries ? 'series' : 'movie',
+    type: isSeries ? "series" : "movie",
     runtime,
     runtimeMinutes,
     overview: item.overview || null,
@@ -230,32 +246,38 @@ function mapApiDetail(item) {
     backdrop: backdropUrl,
     logo: logoUrl,
     backdrops,
-    genres: (item.genres || []).map(g => g.name).filter(Boolean),
+    genres: (item.genres || []).map((g) => g.name).filter(Boolean),
     country: item.country || null,
     countryCode: null,
     language: item.originalLanguage || null,
     director: item.director ? { name: item.director, url: null } : null,
-    cast: (item.cast || []).map(c => ({
+    cast: (item.cast || []).map((c) => ({
       name: c.name,
       character: c.character,
-      image: c.profilePath ? `https://image.tmdb.org/t/p/w185${c.profilePath}` : null
+      image: c.profilePath
+        ? `https://image.tmdb.org/t/p/w185${c.profilePath}`
+        : null,
     })),
     trailer: item.trailerUrl || null,
     watchUrl: `${BASE_URL}/${endpoint}?play=1`,
     streamUrl: null, // Fetched separately
-    keywords: (item.keywords || []).map(k => k.name).filter(Boolean),
+    keywords: (item.keywords || []).map((k) => k.name).filter(Boolean),
     status: isSeries ? normalizeStatus(item.status) : null,
     recommendations: [], // Can be populated if API provides it
-    seasons: isSeries ? (item.seasons || []).map(s => ({
-      name: s.name,
-      seasonNumber: s.seasonNumber,
-      episodeCount: s.episodeCount,
-      episodes: (s.episodes || []).map(e => mapEpisode(e, {
-        seasonPosterPath: s.posterPath,
-        seriesBackdropPath: item.backdropPath,
-        seriesPosterPath: item.posterPath,
-      }))
-    })) : null
+    seasons: isSeries
+      ? (item.seasons || []).map((s) => ({
+          name: s.name,
+          seasonNumber: s.seasonNumber,
+          episodeCount: s.episodeCount,
+          episodes: (s.episodes || []).map((e) =>
+            mapEpisode(e, {
+              seasonPosterPath: s.posterPath,
+              seriesBackdropPath: item.backdropPath,
+              seriesPosterPath: item.posterPath,
+            }),
+          ),
+        }))
+      : null,
   };
 }
 

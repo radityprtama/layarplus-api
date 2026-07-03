@@ -1,156 +1,167 @@
-'use strict';
+"use strict";
 
-const { mapApiItem, mapApiDetail, normalizeStatus } = require('../../src/lib/scraper');
+const {
+  mapApiItem,
+  mapApiDetail,
+  normalizeStatus,
+} = require("../../src/lib/scraper");
 
-describe('scraper.js', () => {
-
-  describe('mapApiItem', () => {
-    it('returns null if item is falsy', () => {
+describe("scraper.js", () => {
+  describe("mapApiItem", () => {
+    it("returns null if item is falsy", () => {
       expect(mapApiItem(null)).toBeNull();
     });
 
-    it('maps a movie item correctly', () => {
+    it("maps a movie item correctly", () => {
       const apiItem = {
-        title: 'Inception',
-        slug: 'inception',
-        contentType: 'movie',
-        releaseDate: '2010-07-16',
+        title: "Inception",
+        slug: "inception",
+        contentType: "movie",
+        releaseDate: "2010-07-16",
         voteAverage: 8.8,
-        posterPath: '/poster.jpg',
-        quality: 'HD'
+        posterPath: "/poster.jpg",
+        quality: "HD",
       };
 
       const mapped = mapApiItem(apiItem);
       expect(mapped).toMatchObject({
-        title: 'Inception',
-        originalTitle: 'Inception',
+        title: "Inception",
+        originalTitle: "Inception",
         year: 2010,
-        type: 'movie',
-        quality: 'HD',
+        type: "movie",
+        quality: "HD",
         rating: 8.8,
         season: null,
-        poster: 'https://image.tmdb.org/t/p/w300/poster.jpg',
+        poster: "https://image.tmdb.org/t/p/w370/poster.jpg",
         backdrop: null,
         logo: null,
-        slug: 'inception',
+        slug: "inception",
         link: {
-          endpoint: 'movie/inception',
-          url: 'https://z2.idlixku.com/movie/inception',
-          thumbnail: 'https://image.tmdb.org/t/p/w300/poster.jpg'
-        }
+          endpoint: "movie/inception",
+          url: "https://z2.idlixku.com/movie/inception",
+          thumbnail: "https://image.tmdb.org/t/p/w370/poster.jpg",
+        },
       });
     });
 
-    it('maps a series item correctly', () => {
+    it("maps a series item correctly", () => {
       const apiItem = {
-        title: 'Breaking Bad',
-        slug: 'breaking-bad',
-        contentType: 'series',
-        releaseDate: '2008-01-20'
+        title: "Breaking Bad",
+        slug: "breaking-bad",
+        contentType: "series",
+        releaseDate: "2008-01-20",
       };
 
       const mapped = mapApiItem(apiItem);
       expect(mapped).toMatchObject({
-        title: 'Breaking Bad',
+        title: "Breaking Bad",
         year: 2008,
-        type: 'series',
+        type: "series",
         backdrop: null,
         logo: null,
-        link: expect.objectContaining({ endpoint: 'series/breaking-bad' })
+        link: expect.objectContaining({ endpoint: "series/breaking-bad" }),
       });
     });
 
-    it('maps logoPath to a fully qualified TMDB logo URL', () => {
+    it("maps logoPath to a fully qualified TMDB logo URL", () => {
       const apiItem = {
-        title: 'Test',
-        slug: 'test',
-        contentType: 'movie',
-        releaseDate: '2024-01-01',
-        posterPath: '/poster.jpg',
-        logoPath: '/logo.png'
+        title: "Test",
+        slug: "test",
+        contentType: "movie",
+        releaseDate: "2024-01-01",
+        posterPath: "/poster.jpg",
+        logoPath: "/logo.png",
       };
 
       const mapped = mapApiItem(apiItem);
-      expect(mapped.logo).toBe('https://image.tmdb.org/t/p/w500/logo.png');
+      expect(mapped.logo).toBe("https://image.tmdb.org/t/p/w500/logo.png");
     });
 
-    it('sets logo to null when logoPath is missing', () => {
+    it("sets logo to null when logoPath is missing", () => {
       const apiItem = {
-        title: 'Test',
-        slug: 'test',
-        contentType: 'movie',
-        releaseDate: '2024-01-01'
+        title: "Test",
+        slug: "test",
+        contentType: "movie",
+        releaseDate: "2024-01-01",
       };
 
       const mapped = mapApiItem(apiItem);
       expect(mapped.logo).toBeNull();
     });
 
-    describe('episode mapping', () => {
-      it('maps an episode with stillPath correctly', () => {
+    describe("episode mapping", () => {
+      it("maps an episode with stillPath correctly", () => {
         const apiItem = {
-          name: 'Deep In Enemy Territory',
+          name: "Deep In Enemy Territory",
           episodeNumber: 9,
-          stillPath: '/still.jpg',
-          voteAverage: '7.5',
+          stillPath: "/still.jpg",
+          voteAverage: "7.5",
           season: { seasonNumber: 1 },
           series: {
-            title: 'Reborn Rookie',
-            slug: 'reborn-rookie-2026',
-            posterPath: '/series-poster.jpg',
-            firstAirDate: '2026-05-30'
+            title: "Reborn Rookie",
+            slug: "reborn-rookie-2026",
+            posterPath: "/series-poster.jpg",
+            firstAirDate: "2026-05-30",
           },
-          contentType: 'episode'
+          contentType: "episode",
         };
 
         const mapped = mapApiItem(apiItem);
         expect(mapped).toMatchObject({
-          title: 'Deep In Enemy Territory',
-          originalTitle: 'Reborn Rookie',
+          title: "Deep In Enemy Territory",
+          originalTitle: "Reborn Rookie",
           year: 2026,
-          type: 'series',
+          type: "series",
           quality: null,
           rating: 7.5,
-          season: 'S1:E9',
-          poster: 'https://image.tmdb.org/t/p/w300/still.jpg',
+          season: "S1:E9",
+          poster: "https://image.tmdb.org/t/p/w370/still.jpg",
           backdrop: null,
           logo: null,
-          slug: 'reborn-rookie-2026',
+          slug: "reborn-rookie-2026",
           link: {
-            endpoint: 'series/reborn-rookie-2026',
-            url: 'https://z2.idlixku.com/series/reborn-rookie-2026',
-            thumbnail: 'https://image.tmdb.org/t/p/w300/still.jpg'
-          }
+            endpoint: "series/reborn-rookie-2026",
+            url: "https://z2.idlixku.com/series/reborn-rookie-2026",
+            thumbnail: "https://image.tmdb.org/t/p/w370/still.jpg",
+          },
         });
       });
 
-      it('falls back to series.posterPath when stillPath is missing', () => {
+      it("falls back to series.posterPath when stillPath is missing", () => {
         const apiItem = {
-          name: 'Episode 2',
+          name: "Episode 2",
           episodeNumber: 2,
-          voteAverage: '6.5',
+          voteAverage: "6.5",
           season: { seasonNumber: 1 },
           series: {
-            title: 'Agent Kim Reactivated',
-            slug: 'agent-kim-reactivated-2026',
-            posterPath: '/series-poster.jpg',
-            firstAirDate: '2026-06-26'
+            title: "Agent Kim Reactivated",
+            slug: "agent-kim-reactivated-2026",
+            posterPath: "/series-poster.jpg",
+            firstAirDate: "2026-06-26",
           },
-          contentType: 'episode'
+          contentType: "episode",
         };
 
         const mapped = mapApiItem(apiItem);
-        expect(mapped.poster).toBe('https://image.tmdb.org/t/p/w300/series-poster.jpg');
-        expect(mapped.link.thumbnail).toBe('https://image.tmdb.org/t/p/w300/series-poster.jpg');
+        expect(mapped.poster).toBe(
+          "https://image.tmdb.org/t/p/w370/series-poster.jpg",
+        );
+        expect(mapped.link.thumbnail).toBe(
+          "https://image.tmdb.org/t/p/w370/series-poster.jpg",
+        );
       });
 
-      it('returns null poster when both stillPath and series.posterPath are missing', () => {
+      it("returns null poster when both stillPath and series.posterPath are missing", () => {
         const apiItem = {
-          name: 'No Art Episode',
+          name: "No Art Episode",
           episodeNumber: 5,
           season: { seasonNumber: 2 },
-          series: { title: 'No Art Series', slug: 'no-art-series', firstAirDate: '2025-01-01' },
-          contentType: 'episode'
+          series: {
+            title: "No Art Series",
+            slug: "no-art-series",
+            firstAirDate: "2025-01-01",
+          },
+          contentType: "episode",
         };
 
         const mapped = mapApiItem(apiItem);
@@ -158,281 +169,305 @@ describe('scraper.js', () => {
         expect(mapped.link.thumbnail).toBeNull();
       });
 
-      it('sets season to null when season object is missing', () => {
+      it("sets season to null when season object is missing", () => {
         const apiItem = {
-          name: 'Test Episode',
+          name: "Test Episode",
           episodeNumber: 5,
-          series: { title: 'Test Series', slug: 'test-series', firstAirDate: '2025-01-01' },
-          contentType: 'episode'
+          series: {
+            title: "Test Series",
+            slug: "test-series",
+            firstAirDate: "2025-01-01",
+          },
+          contentType: "episode",
         };
 
         const mapped = mapApiItem(apiItem);
         expect(mapped.season).toBeNull();
       });
 
-      it('sets season to null when episodeNumber is missing', () => {
+      it("sets season to null when episodeNumber is missing", () => {
         const apiItem = {
-          name: 'Test Episode',
+          name: "Test Episode",
           season: { seasonNumber: 2 },
-          series: { title: 'Test Series', slug: 'test-series', firstAirDate: '2025-01-01' },
-          contentType: 'episode'
+          series: {
+            title: "Test Series",
+            slug: "test-series",
+            firstAirDate: "2025-01-01",
+          },
+          contentType: "episode",
         };
 
         const mapped = mapApiItem(apiItem);
         expect(mapped.season).toBeNull();
       });
 
-      it('handles missing series object gracefully', () => {
+      it("handles missing series object gracefully", () => {
         const apiItem = {
-          name: 'Orphan Episode',
+          name: "Orphan Episode",
           episodeNumber: 3,
           season: { seasonNumber: 1 },
-          contentType: 'episode'
+          contentType: "episode",
         };
 
         const mapped = mapApiItem(apiItem);
         expect(mapped).toMatchObject({
-          title: 'Orphan Episode',
-          originalTitle: '',
+          title: "Orphan Episode",
+          originalTitle: "",
           year: null,
-          type: 'series',
-          season: 'S1:E3',
+          type: "series",
+          season: "S1:E3",
           slug: null,
           poster: null,
-          link: null
+          link: null,
         });
       });
 
-      it('always maps episode type to series', () => {
+      it("always maps episode type to series", () => {
         const withSeries = {
-          name: 'Ep',
+          name: "Ep",
           episodeNumber: 1,
           season: { seasonNumber: 1 },
-          series: { title: 'S', slug: 's' },
-          contentType: 'episode'
+          series: { title: "S", slug: "s" },
+          contentType: "episode",
         };
         const withoutSeries = {
-          name: 'Ep',
+          name: "Ep",
           episodeNumber: 1,
           season: { seasonNumber: 1 },
-          contentType: 'episode'
+          contentType: "episode",
         };
-        expect(mapApiItem(withSeries).type).toBe('series');
-        expect(mapApiItem(withoutSeries).type).toBe('series');
+        expect(mapApiItem(withSeries).type).toBe("series");
+        expect(mapApiItem(withoutSeries).type).toBe("series");
       });
     });
   });
 
-  describe('mapApiDetail', () => {
-    it('returns empty object if item is falsy', () => {
+  describe("mapApiDetail", () => {
+    it("returns empty object if item is falsy", () => {
       expect(mapApiDetail(null)).toEqual({});
     });
 
-    it('maps a movie detail correctly', () => {
+    it("maps a movie detail correctly", () => {
       const apiDetail = {
-        title: 'Interstellar',
-        slug: 'interstellar',
-        releaseDate: '2014-11-05',
+        title: "Interstellar",
+        slug: "interstellar",
+        releaseDate: "2014-11-05",
         runtime: 169,
-        overview: 'A team of explorers travel through a wormhole...',
-        posterPath: '/interstellar.jpg',
-        backdropPath: '/interstellar_bg.jpg',
-        genres: [{ name: 'Adventure' }, { name: 'Drama' }, { name: 'Science Fiction' }],
-        country: 'United States',
-        originalLanguage: 'en',
-        director: 'Christopher Nolan',
-        cast: [
-          { name: 'Matthew McConaughey', character: 'Cooper', profilePath: '/matt.jpg' }
+        overview: "A team of explorers travel through a wormhole...",
+        posterPath: "/interstellar.jpg",
+        backdropPath: "/interstellar_bg.jpg",
+        genres: [
+          { name: "Adventure" },
+          { name: "Drama" },
+          { name: "Science Fiction" },
         ],
-        trailerUrl: 'https://youtube.com/watch?v=zSWdZVtXT7E',
-        keywords: [{ name: 'space travel' }]
+        country: "United States",
+        originalLanguage: "en",
+        director: "Christopher Nolan",
+        cast: [
+          {
+            name: "Matthew McConaughey",
+            character: "Cooper",
+            profilePath: "/matt.jpg",
+          },
+        ],
+        trailerUrl: "https://youtube.com/watch?v=zSWdZVtXT7E",
+        keywords: [{ name: "space travel" }],
       };
 
       const mapped = mapApiDetail(apiDetail);
       expect(mapped).toMatchObject({
-        title: 'Interstellar',
+        title: "Interstellar",
         year: 2014,
-        type: 'movie',
-        runtime: 'PT169M',
+        type: "movie",
+        runtime: "PT169M",
         runtimeMinutes: 169,
-        overview: 'A team of explorers travel through a wormhole...',
-        poster: 'https://image.tmdb.org/t/p/w300/interstellar.jpg',
-        backdrop: 'https://image.tmdb.org/t/p/w1280/interstellar_bg.jpg',
+        overview: "A team of explorers travel through a wormhole...",
+        poster: "https://image.tmdb.org/t/p/w370/interstellar.jpg",
+        backdrop: "https://image.tmdb.org/t/p/w1280/interstellar_bg.jpg",
         logo: null,
         backdrops: null,
-        genres: ['Adventure', 'Drama', 'Science Fiction'],
-        country: 'United States',
-        language: 'en',
-        director: { name: 'Christopher Nolan', url: null },
-        trailer: 'https://youtube.com/watch?v=zSWdZVtXT7E',
-        keywords: ['space travel'],
-        seasons: null
+        genres: ["Adventure", "Drama", "Science Fiction"],
+        country: "United States",
+        language: "en",
+        director: { name: "Christopher Nolan", url: null },
+        trailer: "https://youtube.com/watch?v=zSWdZVtXT7E",
+        keywords: ["space travel"],
+        seasons: null,
       });
       expect(mapped.cast).toHaveLength(1);
       expect(mapped.cast[0]).toEqual({
-        name: 'Matthew McConaughey',
-        character: 'Cooper',
-        image: 'https://image.tmdb.org/t/p/w185/matt.jpg'
+        name: "Matthew McConaughey",
+        character: "Cooper",
+        image: "https://image.tmdb.org/t/p/w185/matt.jpg",
       });
     });
 
-    it('maps a series detail correctly with seasons', () => {
+    it("maps a series detail correctly with seasons", () => {
       const apiDetail = {
-        title: 'Game of Thrones',
-        slug: 'game-of-thrones',
+        title: "Game of Thrones",
+        slug: "game-of-thrones",
         numberOfSeasons: 8,
-        firstAirDate: '2011-04-17',
-        status: 'Ended',
+        firstAirDate: "2011-04-17",
+        status: "Ended",
         seasons: [
           {
-            name: 'Season 1',
+            name: "Season 1",
             seasonNumber: 1,
             episodeCount: 10,
             episodes: [
-              { episodeNumber: 1, title: 'Winter Is Coming', overview: 'Ned Stark...' }
-            ]
-          }
-        ]
+              {
+                episodeNumber: 1,
+                title: "Winter Is Coming",
+                overview: "Ned Stark...",
+              },
+            ],
+          },
+        ],
       };
 
       const mapped = mapApiDetail(apiDetail);
       expect(mapped).toMatchObject({
-        title: 'Game of Thrones',
+        title: "Game of Thrones",
         year: 2011,
-        type: 'series',
-        status: 'Ended',
+        type: "series",
+        status: "Ended",
         logo: null,
         backdrops: null,
         seasons: [
           {
-            name: 'Season 1',
+            name: "Season 1",
             seasonNumber: 1,
             episodeCount: 10,
             episodes: [
-              { episodeNumber: 1, title: 'Winter Is Coming', overview: 'Ned Stark...' }
-            ]
-          }
-        ]
+              {
+                episodeNumber: 1,
+                title: "Winter Is Coming",
+                overview: "Ned Stark...",
+              },
+            ],
+          },
+        ],
       });
     });
 
-    it('maps logoPath and backdrops on detail correctly', () => {
+    it("maps logoPath and backdrops on detail correctly", () => {
       const apiDetail = {
-        title: 'Movie with Logo',
-        slug: 'movie-with-logo',
-        overview: 'Test',
-        posterPath: '/poster.jpg',
-        backdropPath: '/bg.jpg',
-        logoPath: '/logo.png',
-        backdrops: ['/bg1.jpg', '/bg2.jpg'],
+        title: "Movie with Logo",
+        slug: "movie-with-logo",
+        overview: "Test",
+        posterPath: "/poster.jpg",
+        backdropPath: "/bg.jpg",
+        logoPath: "/logo.png",
+        backdrops: ["/bg1.jpg", "/bg2.jpg"],
       };
 
       const mapped = mapApiDetail(apiDetail);
-      expect(mapped.logo).toBe('https://image.tmdb.org/t/p/w500/logo.png');
+      expect(mapped.logo).toBe("https://image.tmdb.org/t/p/w500/logo.png");
       expect(mapped.backdrops).toEqual([
-        'https://image.tmdb.org/t/p/w1280/bg1.jpg',
-        'https://image.tmdb.org/t/p/w1280/bg2.jpg',
+        "https://image.tmdb.org/t/p/w1280/bg1.jpg",
+        "https://image.tmdb.org/t/p/w1280/bg2.jpg",
       ]);
     });
 
-    it('maps a returning-series status to Ongoing', () => {
+    it("maps a returning-series status to Ongoing", () => {
       const mapped = mapApiDetail({
-        title: 'The Last of Us',
-        slug: 'the-last-of-us',
+        title: "The Last of Us",
+        slug: "the-last-of-us",
         numberOfSeasons: 2,
-        firstAirDate: '2023-01-15',
-        status: 'Returning Series',
+        firstAirDate: "2023-01-15",
+        status: "Returning Series",
       });
-      expect(mapped.status).toBe('Ongoing');
+      expect(mapped.status).toBe("Ongoing");
     });
 
-    it('normalizes Pilot status to Upcoming', () => {
+    it("normalizes Pilot status to Upcoming", () => {
       const mapped = mapApiDetail({
-        title: 'Future Show',
-        slug: 'future-show',
+        title: "Future Show",
+        slug: "future-show",
         numberOfSeasons: 1,
-        status: 'Pilot',
+        status: "Pilot",
       });
-      expect(mapped.status).toBe('Upcoming');
+      expect(mapped.status).toBe("Upcoming");
     });
 
-    it('sets status to null for movies', () => {
+    it("sets status to null for movies", () => {
       const mapped = mapApiDetail({
-        title: 'Interstellar',
-        slug: 'interstellar',
-        releaseDate: '2014-11-05',
+        title: "Interstellar",
+        slug: "interstellar",
+        releaseDate: "2014-11-05",
         runtime: 169,
       });
       expect(mapped.status).toBeNull();
     });
 
-    it('sets status to null when upstream status is missing', () => {
+    it("sets status to null when upstream status is missing", () => {
       const mapped = mapApiDetail({
-        title: 'Mystery Series',
-        slug: 'mystery',
+        title: "Mystery Series",
+        slug: "mystery",
         numberOfSeasons: 1,
       });
       expect(mapped.status).toBeNull();
     });
 
-    it('returns null for unrecognised status values', () => {
+    it("returns null for unrecognised status values", () => {
       const mapped = mapApiDetail({
-        title: 'Weird Series',
-        slug: 'weird',
+        title: "Weird Series",
+        slug: "weird",
         numberOfSeasons: 1,
-        status: 'Unknown Status',
+        status: "Unknown Status",
       });
       expect(mapped.status).toBeNull();
     });
   });
 
-  describe('normalizeStatus', () => {
+  describe("normalizeStatus", () => {
     it('maps "Returning Series" to "Ongoing"', () => {
-      expect(normalizeStatus('Returning Series')).toBe('Ongoing');
+      expect(normalizeStatus("Returning Series")).toBe("Ongoing");
     });
 
     it('maps "In Production" to "Ongoing"', () => {
-      expect(normalizeStatus('In Production')).toBe('Ongoing');
+      expect(normalizeStatus("In Production")).toBe("Ongoing");
     });
 
     it('maps "Pilot" to "Upcoming"', () => {
-      expect(normalizeStatus('Pilot')).toBe('Upcoming');
+      expect(normalizeStatus("Pilot")).toBe("Upcoming");
     });
 
     it('maps "Ended" to "Ended"', () => {
-      expect(normalizeStatus('Ended')).toBe('Ended');
+      expect(normalizeStatus("Ended")).toBe("Ended");
     });
 
     it('maps "Cancelled" (TMDB canonical) to "Ended"', () => {
-      expect(normalizeStatus('Cancelled')).toBe('Ended');
+      expect(normalizeStatus("Cancelled")).toBe("Ended");
     });
 
     it('maps "Canceled" (American spelling) to "Ended"', () => {
-      expect(normalizeStatus('Canceled')).toBe('Ended');
+      expect(normalizeStatus("Canceled")).toBe("Ended");
     });
 
     it('returns null for "Planned" (not a TMDB status)', () => {
-      expect(normalizeStatus('Planned')).toBeNull();
+      expect(normalizeStatus("Planned")).toBeNull();
     });
 
-    it('returns null for unknown values', () => {
-      expect(normalizeStatus('Rumored')).toBeNull();
+    it("returns null for unknown values", () => {
+      expect(normalizeStatus("Rumored")).toBeNull();
     });
 
-    it('returns null for null', () => {
+    it("returns null for null", () => {
       expect(normalizeStatus(null)).toBeNull();
     });
 
-    it('returns null for undefined', () => {
+    it("returns null for undefined", () => {
       expect(normalizeStatus(undefined)).toBeNull();
     });
 
-    it('returns null for empty string', () => {
-      expect(normalizeStatus('')).toBeNull();
+    it("returns null for empty string", () => {
+      expect(normalizeStatus("")).toBeNull();
     });
 
-    it('trims whitespace before matching', () => {
-      expect(normalizeStatus('  Ended  ')).toBe('Ended');
+    it("trims whitespace before matching", () => {
+      expect(normalizeStatus("  Ended  ")).toBe("Ended");
     });
   });
 });
