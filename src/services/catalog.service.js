@@ -80,10 +80,32 @@ async function getCategoryIndex(category) {
 }
 
 async function getCategoryBrowse(category, value, type, page = 1, limit, sort) {
-  // Network pages: use cached index instead of upstream (which ignores network= param)
   if (category === 'network') {
     const networkIndex = require('./networkIndex.service');
-    return networkIndex.getNetworkItems(value, Number(page), Number(limit) || 36);
+    const nLimit = Number(limit) || 36;
+    const nSort = sort || 'createdAt';
+    const isSeries = type === 'series';
+    const apiPath = isSeries ? '/api/series' : '/api/movies';
+    const qs = `network=${value}&page=${page}&limit=${nLimit}&sort=${nSort}`;
+    try {
+      const data = await httpClient.getJson(`${apiPath}?${qs}`);
+      if (data?.data?.length) {
+        const items = (data.data || [])
+          .map(i => ensureContentType(i, isSeries ? 'tv_series' : 'movie'))
+          .map(mapApiItem)
+          .filter(Boolean);
+        const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
+        return {
+          items,
+          pagination: {
+            currentPage: Number(page),
+            totalPages: Number(upstreamPages),
+            hasNext: Number(page) < Number(upstreamPages),
+          },
+        };
+      }
+    } catch {}
+    return networkIndex.getNetworkItems(value, Number(page), nLimit);
   }
 
   const resLimit = Number(limit) || 36;

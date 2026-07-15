@@ -122,7 +122,7 @@ describe('Catalog Routes', () => {
   });
 
   describe('GET /api/network/:network', () => {
-    it('returns media for a network page', async () => {
+    it('returns media for a network page from upstream', async () => {
       httpClient.getJson.mockResolvedValue(MOCK_BROWSE);
 
       const res = await request(app).get('/api/network/hbo?type=movie');
@@ -130,7 +130,19 @@ describe('Catalog Routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data).toHaveLength(1);
       expect(httpClient.getJson).toHaveBeenCalledWith('/api/movies?network=hbo&page=1&limit=36&sort=createdAt');
+    });
+
+    it('falls back to cached index when upstream returns empty', async () => {
+      httpClient.getJson.mockResolvedValue({ data: [] });
+
+      const res = await request(app).get('/api/network/netflix?type=series');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(httpClient.getJson).toHaveBeenCalledWith('/api/series?network=netflix&page=1&limit=36&sort=createdAt');
     });
   });
 
