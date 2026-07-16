@@ -85,8 +85,9 @@ function getStats() {
 let logTimer = null;
 function startPeriodicLog(intervalMs = 300_000) {
   if (logTimer) return logTimer;
+  const logger = require('./logger');
   logTimer = setInterval(() => {
-    console.log('[metrics]', JSON.stringify(getStats()));
+    logger.info({ stats: getStats() }, 'cache metrics');
   }, intervalMs);
   logTimer.unref();
   return logTimer;

@@ -28,13 +28,16 @@
   },
   "homepage": "https://github.com/annurdien/IDLIX-API#readme",
   "dependencies": {
+    "@arcjet/node": "^1.9.1",
+    "@scalar/express-api-reference": "^0.10.4",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "express": "^5.2.1",
+    "express-timeout-handler": "^2.2.2",
     "geoip-lite": "^1.4.10",
     "helmet": "^4.6.0",
     "ioredis": "^5.11.1",
-    "@scalar/express-api-reference": "^0.10.4"
+    "pino": "^10.3.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",

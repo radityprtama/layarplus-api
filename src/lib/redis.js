@@ -1,6 +1,7 @@
 'use strict';
 
 const Redis = require('ioredis');
+const logger = require('./logger');
 const { REDIS_URL, REDIS_ENABLED } = require('../config/env');
 
 /**
@@ -46,18 +47,16 @@ function initialise() {
     });
 
     c.on('error', (err) => {
-      // Log without spamming: only the first error per minute would be
-      // ideal, but stderr at WARN is enough for an MVP.
-      console.warn('[redis] error:', err.message);
+      logger.warn({ err }, 'redis error');
     });
-    c.on('connect', () => console.log('[redis] connected'));
-    c.on('ready',   () => console.log('[redis] ready'));
-    c.on('close',   () => console.warn('[redis] connection closed'));
+    c.on('connect', () => logger.info('redis connected'));
+    c.on('ready',   () => logger.info('redis ready'));
+    c.on('close',   () => logger.warn('redis connection closed'));
 
     client = c;
     return c;
   } catch (err) {
-    console.warn('[redis] failed to initialise client:', err.message);
+    logger.warn({ err }, 'redis failed to initialise client');
     return null;
   }
 }

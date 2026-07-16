@@ -58,6 +58,63 @@ module.exports = {
   HOMEPAGE_BUDGET: Number(process.env.HOMEPAGE_BUDGET) || 7,
   HOMEPAGE_ROW_SIZE: Number(process.env.HOMEPAGE_ROW_SIZE) || 20,
 
+  // ── Security ─────────────────────────────────────────────────────────────
+
+  /** Arcjet API key — set to enable rate-limiting & Shield protection. */
+  ARCJET_KEY: process.env.ARCJET_KEY || '',
+
+  /** Arcjet Shield mode: 'LIVE' (default) or 'DRY_RUN'. */
+  ARCJET_SHIELD_MODE: (process.env.ARCJET_SHIELD_MODE || 'LIVE').toUpperCase(),
+
+  /** Arcjet sliding window rate limit mode: 'LIVE' (default) or 'DRY_RUN'. */
+  ARCJET_RATE_MODE: (process.env.ARCJET_RATE_MODE || 'LIVE').toUpperCase(),
+
+  /** Rate limit: max requests per interval per IP. */
+  ARCJET_RATE_MAX: Number(process.env.ARCJET_RATE_MAX) || 100,
+
+  /** Rate limit interval in ms (default: 60s). */
+  ARCJET_RATE_INTERVAL: process.env.ARCJET_RATE_INTERVAL || '60s',
+
+  /** Enable Arcjet bot detection (additional API call). */
+  ARCJET_BOT_DETECTION: process.env.ARCJET_BOT_DETECTION === 'true',
+
+  /** Shared API key for Bearer auth between API ↔ frontend BFF. */
+  API_KEY: process.env.API_KEY || '',
+
+  /**
+   * Comma-separated list of allowed CORS origins.
+   * Default: layarplus.my.id, admin.layarplus.my.id, localhost dev.
+   */
+  get CORS_ORIGINS() {
+    if (process.env.CORS_ORIGINS) {
+      return process.env.CORS_ORIGINS.split(',').map(s => s.trim());
+    }
+    return [
+      'https://layarplus.my.id',
+      'https://admin.layarplus.my.id',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3000',
+    ];
+  },
+
+  /** Request timeout in ms (default: 30s). */
+  REQUEST_TIMEOUT_MS: Number(process.env.REQUEST_TIMEOUT_MS) || 30_000,
+
+  /** Maximum JSON body size (default: 1mb). */
+  MAX_BODY_SIZE: process.env.MAX_BODY_SIZE || '1mb',
+
+  // ── Circuit breaker ──────────────────────────────────────────────────────
+
+  /** Consecutive failures before circuit opens (default: 5). */
+  CIRCUIT_BREAKER_THRESHOLD: Number(process.env.CIRCUIT_BREAKER_THRESHOLD) || 5,
+
+  /** Time (ms) before probing after open (default: 30s). */
+  CIRCUIT_BREAKER_RESET_MS: Number(process.env.CIRCUIT_BREAKER_RESET_MS) || 30_000,
+
+  /** Successful probes needed to close (default: 2). */
+  CIRCUIT_BREAKER_HALF_OPEN_MAX: Number(process.env.CIRCUIT_BREAKER_HALF_OPEN_MAX) || 2,
+
   /**
    * Per-category cache TTLs in hours.
    * Each can be overridden via a corresponding CACHE_TTL_* env var.

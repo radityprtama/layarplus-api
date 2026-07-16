@@ -1,6 +1,7 @@
 "use strict";
 
 const { BASE_URL, SILENTIUM_API_URL } = require("../../config/env");
+const logger = require("../logger");
 
 /**
  * Run a fetch() call inside the Silentium Go service.
@@ -33,15 +34,13 @@ async function browserFetch(url, { method = "GET", body, headers = {} } = {}) {
     });
 
     if (!res.ok) {
-      console.warn(
-        `[silentiumClient] HTTP error from silentium service: ${res.status}`,
-      );
+      logger.warn({ status: res.status }, 'silentium HTTP error');
       return { status: res.status, ok: false, text: "" };
     }
 
     const data = await res.json();
     if (data.status !== "ok" || !data.solution) {
-      console.warn(`[silentiumClient] Silentium failed to solve:`, data);
+      logger.warn({ data }, 'Silentium failed to solve');
       return { status: 500, ok: false, text: "" };
     }
 
@@ -51,10 +50,7 @@ async function browserFetch(url, { method = "GET", body, headers = {} } = {}) {
       text: data.solution.response || "",
     };
   } catch (err) {
-    console.error(
-      `[silentiumClient] Error calling silentium service:`,
-      err.message,
-    );
+    logger.error({ err }, 'silentium service error');
     return { status: 0, ok: false, text: err.message };
   }
 }
@@ -73,9 +69,7 @@ async function fetchHtml(url) {
   });
 
   if (!res.ok) {
-    console.warn(
-      `[silentiumClient] fetchHtml warning: ${res.status} on ${url}`,
-    );
+    logger.warn({ status: res.status, url }, 'fetchHtml warning');
   }
 
   return res.text || "";
@@ -93,9 +87,7 @@ async function getCookieHeader() {
  * Tear down the browser. (Stubbed, silentium service runs independently)
  */
 async function invalidate() {
-  console.log(
-    "[silentiumClient] invalidate() called - no-op for silentium service",
-  );
+  logger.info("invalidate() called - no-op for silentium service");
 }
 
 module.exports = { browserFetch, fetchHtml, getCookieHeader, invalidate };

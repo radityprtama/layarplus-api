@@ -2,6 +2,7 @@
 
 const metrics = require('./metrics');
 const redis = require('./redis');
+const logger = require('./logger');
 const { CACHE_BACKEND, REDIS_KEY_PREFIX } = require('../config/env');
 
 /**
@@ -120,7 +121,7 @@ class CacheService {
       this._store.set(key, { data: value, timestamp: Date.now() });
       return value;
     } catch (err) {
-      console.warn('[cache] l2 get failed for', key, '-', err.message);
+      logger.warn({ err, key }, 'l2 get failed');
       return null;
     }
   }
@@ -157,11 +158,11 @@ class CacheService {
       const value = JSON.stringify(data);
       if (ttlSeconds > 0) {
         c.set(this._key(key), value, 'EX', ttlSeconds).catch((err) => {
-          console.warn('[cache] l2 set failed for', key, '-', err.message);
+          logger.warn({ err, key }, 'l2 set failed');
         });
       }
     } catch (err) {
-      console.warn('[cache] l2 serialise failed for', key, '-', err.message);
+      logger.warn({ err, key }, 'l2 serialise failed');
     }
   }
 
@@ -189,7 +190,7 @@ class CacheService {
             }
           } while (cursor !== '0');
         } catch (err) {
-          console.warn('[cache] l2 clear failed:', err.message);
+          logger.warn({ err }, 'l2 clear failed');
         }
       })();
       // Don't await — clear() is synchronous from the caller's POV.

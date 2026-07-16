@@ -5,26 +5,26 @@ require('dotenv').config();
 const createApp        = require('./src/app');
 const { PORT, CACHE_BACKEND, REDIS_URL } = require('./src/config/env');
 const redis = require('./src/lib/redis');
+const logger = require('./src/lib/logger');
 
 const app = createApp();
 
 const server = app.listen(PORT, () => {
-  console.log(`Listening on PORT ${PORT}`);
-  console.log(`Cache backend: ${CACHE_BACKEND}`);
+  logger.info({ port: PORT, cacheBackend: CACHE_BACKEND }, 'server started');
   if (CACHE_BACKEND === 'redis') {
-    console.log(`Redis target: ${REDIS_URL}`);
+    logger.info({ redisUrl: REDIS_URL }, 'redis target');
   }
 });
 
 function shutdown(signal) {
-  console.log(`Received ${signal}, shutting down gracefully...`);
+  logger.info({ signal }, 'shutting down gracefully');
   let httpClosed = false;
   let redisClosed = false;
   function maybeExit() {
     if (httpClosed && redisClosed) process.exit(0);
   }
   server.close(() => {
-    console.log('HTTP server closed');
+    logger.info('HTTP server closed');
     httpClosed = true;
     maybeExit();
   });
@@ -33,7 +33,7 @@ function shutdown(signal) {
     maybeExit();
   }).catch(() => { redisClosed = true; maybeExit(); });
   setTimeout(() => {
-    console.error('Forced shutdown after timeout');
+    logger.error('forced shutdown after timeout');
     process.exit(1);
   }, 10_000);
 }
@@ -42,10 +42,10 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));
 
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err);
+  logger.error({ err }, 'uncaught exception');
   shutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection:', reason);
+  logger.error({ reason }, 'unhandled rejection');
 });

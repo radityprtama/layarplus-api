@@ -27,6 +27,7 @@
  */
 
 const { BASE_URL } = require('../config/env');
+const logger = require('./logger');
 const { browserFetch } = require('./cfBypass/cookieHarvester');
 
 const UA = 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36';
@@ -75,23 +76,23 @@ function emptyResult() {
  */
 async function resolveMovieUuid(slug, referer) {
   const url = `${BASE_URL}/api/movies/${slug}`;
-  console.log(`[streamClient] Step 1: GET ${url}`);
+  logger.info({ url }, 'Step 1');
 
   const res  = await browserFetch(url, { headers: { referer } });
   const data = parseJson(res);
 
   if (!data) {
-    console.warn(`[streamClient] Step 1 failed: ${res.status} — ${res.text.substring(0, 120)}`);
+    logger.warn({ status: res.status, snippet: res.text.substring(0, 120) }, 'Step 1 failed');
     return null;
   }
 
   const uuid = data?.id || data?.data?.id;
   if (!uuid) {
-    console.warn(`[streamClient] Step 1: no UUID in response`);
+    logger.warn('Step 1: no UUID in response');
     return null;
   }
 
-  console.log(`[streamClient] Step 1 ✅ movie UUID: ${uuid}`);
+  logger.info({ uuid }, 'Step 1 ✅');
   return uuid;
 }
 
@@ -108,7 +109,7 @@ async function resolveSeriesAndEpisodeUuids(slug, season, episode) {
   const referer = `${BASE_URL}/series/${slug}/season/${season}/episode/${episode}`;
   const apiUrl  = `${BASE_URL}/api/series/${slug}/season/${season}`;
 
-  console.log(`[streamClient] Step 1a/1b: GET ${apiUrl}`);
+  logger.info({ apiUrl }, 'Step 1a/1b');
 
   const res = await browserFetch(apiUrl, {
     headers: {
@@ -119,7 +120,7 @@ async function resolveSeriesAndEpisodeUuids(slug, season, episode) {
 
   const data = parseJson(res);
   if (!data || !data.series || !data.season) {
-    console.warn(`[streamClient] Step 1a/1b failed to get season data`);
+    logger.warn('Step 1a/1b failed to get season data');
     return { seriesUuid: null, episodeUuid: null };
   }
 
@@ -128,15 +129,15 @@ async function resolveSeriesAndEpisodeUuids(slug, season, episode) {
   const episodeUuid = episodeObj ? episodeObj.id : null;
 
   if (seriesUuid) {
-    console.log(`[streamClient] Step 1a ✅ series UUID: ${seriesUuid}`);
+    logger.info({ seriesUuid }, 'Step 1a ✅');
   } else {
-    console.warn(`[streamClient] Step 1a: could not resolve series UUID`);
+    logger.warn('Step 1a: could not resolve series UUID');
   }
 
   if (episodeUuid) {
-    console.log(`[streamClient] Step 1b ✅ episode UUID: ${episodeUuid}`);
+    logger.info({ episodeUuid }, 'Step 1b ✅');
   } else {
-    console.warn(`[streamClient] Step 1b: could not find episode ${episode} in season ${season}`);
+    logger.warn({ episode, season }, 'Step 1b: could not find episode');
   }
 
   return { seriesUuid, episodeUuid };
@@ -162,9 +163,9 @@ async function trackView(contentType, contentId, referer, episodeId = null) {
         referer,
       },
     });
-    console.log(`[streamClient] Step 2 (views/track): ${res.status}`);
+    logger.info({ status: res.status }, 'Step 2');
   } catch (err) {
-    console.warn(`[streamClient] Step 2 error (ignored): ${err.message}`);
+    logger.warn({ err }, 'Step 2 error (ignored)');
   }
 }
 
@@ -177,17 +178,17 @@ async function trackView(contentType, contentId, referer, episodeId = null) {
  */
 async function getPlayInfo(playInfoType, uuid, referer) {
   const url = `${BASE_URL}/api/watch/play-info/${playInfoType}/${uuid}`;
-  console.log(`[streamClient] Step 3: GET ${url}`);
+  logger.info({ url }, 'Step 3');
 
   const res  = await browserFetch(url, { headers: { referer } });
   const data = parseJson(res);
 
   if (!data) {
-    console.warn(`[streamClient] Step 3 failed: ${res.status}`);
+    logger.warn({ status: res.status }, 'Step 3 failed');
     return null;
   }
 
-  console.log(`[streamClient] Step 3 ✅ kind=${data.kind}, tier=${data.viewerTier}`);
+  logger.info({ kind: data.kind, tier: data.viewerTier }, 'Step 3 ✅');
   return data;
 }
 
@@ -199,7 +200,7 @@ async function getPlayInfo(playInfoType, uuid, referer) {
  */
 async function claimSession(gateToken, referer) {
   const url = `${BASE_URL}/api/watch/session/claim`;
-  console.log(`[streamClient] Step 5: POST ${url}`);
+  logger.info({ url }, 'Step 5');
 
   const res  = await browserFetch(url, {
     method:  'POST',
@@ -213,11 +214,11 @@ async function claimSession(gateToken, referer) {
   const data = parseJson(res);
 
   if (!data || !data.claim || !data.redeemUrl) {
-    console.warn(`[streamClient] Step 5 failed: ${res.status} — ${(res.text || '').substring(0, 120)}`);
+    logger.warn({ status: res.status, snippet: (res.text || '').substring(0, 120) }, 'Step 5 failed');
     return null;
   }
 
-  console.log(`[streamClient] Step 5 ✅ kind=${data.kind}, redeemUrl=${data.redeemUrl}`);
+  logger.info({ kind: data.kind, redeemUrl: data.redeemUrl }, 'Step 5 ✅');
   return data;
 }
 
@@ -230,7 +231,7 @@ async function claimSession(gateToken, referer) {
  * @returns {Promise<object|null>}
  */
 async function redeemClaim(redeemUrl, claim) {
-  console.log(`[streamClient] Step 6: POST ${redeemUrl}`);
+  logger.info({ redeemUrl }, 'Step 6');
 
   // getCookieHeader() is not needed here — majorplay.net doesn't use CF cookies.
   // We just need the correct origin + referer headers.
@@ -254,17 +255,17 @@ async function redeemClaim(redeemUrl, claim) {
   });
 
   if (!res.ok) {
-    console.warn(`[streamClient] Step 6 failed: ${res.status}`);
+    logger.warn({ status: res.status }, 'Step 6 failed');
     return null;
   }
 
   const data = await res.json();
   if (data.code !== 'ok') {
-    console.warn(`[streamClient] Step 6 unexpected code: ${data.code}`);
+    logger.warn({ code: data.code }, 'Step 6 unexpected code');
     return null;
   }
 
-  console.log(`[streamClient] Step 6 ✅ ${(data.subtitles || []).length} subtitle(s)`);
+  logger.info({ subtitleCount: (data.subtitles || []).length }, 'Step 6 ✅');
   return data;
 }
 
@@ -282,7 +283,7 @@ async function runStreamTail(playInfoType, playInfoUuid, referer, label) {
   if (!playInfo) return emptyResult();
 
   if (playInfo.kind !== 'gate') {
-    console.warn(`[streamClient] Unexpected play-info kind: "${playInfo.kind}"`);
+    logger.warn({ kind: playInfo.kind }, 'Unexpected play-info kind');
     return emptyResult();
   }
 
@@ -290,7 +291,7 @@ async function runStreamTail(playInfoType, playInfoUuid, referer, label) {
   const countdownMs = playInfo.unlockAt - playInfo.serverNow;
   const waitMs = Math.min(Math.max(0, countdownMs + 500), 20000);
   if (waitMs > 0) {
-    console.log(`[streamClient] Step 4: waiting ${waitMs}ms...`);
+    logger.info({ waitMs }, 'Step 4: waiting');
     await new Promise(r => setTimeout(r, waitMs));
   }
 
@@ -308,7 +309,7 @@ async function runStreamTail(playInfoType, playInfoUuid, referer, label) {
     url:   s.path,
   }));
 
-  console.log(`[streamClient] ✅ Stream ready — ${label}`);
+  logger.info({ label }, 'Stream ready ✅');
 
   return {
     streamUrl:   playData.url || null,
@@ -355,7 +356,7 @@ async function getEpisodeStreamData(slug, season, episode) {
   const { seriesUuid, episodeUuid } = await resolveSeriesAndEpisodeUuids(slug, season, episode);
 
   if (!episodeUuid) {
-    console.error(`[streamClient] Cannot proceed without episode UUID`);
+    logger.error('Cannot proceed without episode UUID');
     return emptyResult();
   }
 
