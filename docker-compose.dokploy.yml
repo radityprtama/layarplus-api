@@ -78,6 +78,22 @@ services:
             - ENABLE_GEO_TRENDING=${ENABLE_GEO_TRENDING:-true}
             # --- Optional TMDB metadata enrichment --------------------------------
             - TMDB_API_KEY=${TMDB_API_KEY:-}
+            # --- Security ----------------------------------------------------------
+            - API_KEY=${API_KEY:-}
+            - ARCJET_KEY=${ARCJET_KEY:-}
+            - ARCJET_SHIELD_MODE=${ARCJET_SHIELD_MODE:-LIVE}
+            - ARCJET_RATE_MODE=${ARCJET_RATE_MODE:-LIVE}
+            - ARCJET_RATE_MAX=${ARCJET_RATE_MAX:-100}
+            - ARCJET_RATE_INTERVAL=${ARCJET_RATE_INTERVAL:-60s}
+            - ARCJET_BOT_DETECTION=${ARCJET_BOT_DETECTION:-false}
+            - CORS_ORIGINS=${CORS_ORIGINS:-}
+            # --- Request limits ----------------------------------------------------
+            - REQUEST_TIMEOUT_MS=${REQUEST_TIMEOUT_MS:-30000}
+            - MAX_BODY_SIZE=${MAX_BODY_SIZE:-1mb}
+            # --- Circuit breaker (Silentium upstream) ------------------------------
+            - CIRCUIT_BREAKER_THRESHOLD=${CIRCUIT_BREAKER_THRESHOLD:-5}
+            - CIRCUIT_BREAKER_RESET_MS=${CIRCUIT_BREAKER_RESET_MS:-30000}
+            - CIRCUIT_BREAKER_HALF_OPEN_MAX=${CIRCUIT_BREAKER_HALF_OPEN_MAX:-2}
         depends_on:
             silentium:
                 condition: service_healthy
