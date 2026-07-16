@@ -24,6 +24,7 @@ services:
   # ---------------------------------------------------------------------------
   silentium:
     image: quay.io/radityprtama/silentium:latest
+    pull_policy: always
     container_name: layarplus-silentium
     environment:
       - HEADLESS=true
