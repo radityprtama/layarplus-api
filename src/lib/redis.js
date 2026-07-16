@@ -41,7 +41,8 @@ function initialise() {
       // lookups fail fast and the caller can fall back to L1.
       enableOfflineQueue: false,
       maxRetriesPerRequest: 0,
-      connectTimeout: 1_000,
+      // 5s — Docker DNS + TCP handshake can stall; 1s was too aggressive.
+      connectTimeout: 5_000,
     });
 
     c.on('error', (err) => {

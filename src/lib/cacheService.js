@@ -26,15 +26,19 @@ class CacheService {
   /**
    * @param {number}                       [cleanupIntervalMs=300_000]  How often to purge stale L1 entries (5 min default).
    *                                                              Set to 0 to disable periodic cleanup.
-   * @param {object|null}                  [redisClient=null]         Override Redis client (mostly for tests).
-   *                                                              When null, the wrapper pulls from `redis.getClient()`.
+   * @param {object|null}                  [redisClient]             Override Redis client (mostly for tests).
+   *                                                              Omit or pass undefined to use lazy init from redis.js.
+   *                                                              Pass null to explicitly disable L2 layer.
    */
-  constructor(cleanupIntervalMs, redisClient = null) {
+  constructor(cleanupIntervalMs, redisClient) {
     /** @type {Map<string, {data: *, timestamp: number, absoluteExpiryMs?: number}>} */
     this._store = new Map();
     /** @type {Map<string, Promise<*>>} In-flight fetches awaiting completion. */
     this._inFlight = new Map();
-    this._l2 = redisClient; // null = L2 disabled (memory mode or no injection)
+    // redisClient intentionally has no default: when called without it (production),
+    // this._l2 stays undefined, which signals _l2Client() to attempt lazy init.
+    // Tests pass null to disable L2 or a mock client to inject.
+    this._l2 = redisClient;
 
     // ponytail: periodic eviction prevents unbounded Map growth.
     // For Redis L2, TTL is enforced server-side — no equivalent needed.
