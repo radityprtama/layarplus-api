@@ -1,0 +1,95 @@
+# =============================================================================
+#  docker-compose.dokploy.yml
+#  Self-contained stack for Dokploy (or any Docker host / Swarm node).
+#
+#  Services:
+#    api       — LayarPlus API (prebuilt image on Quay.io)
+#    redis     — L2 cache (shared across api replicas)
+#    silentium — Cloudflare-bypass headless browser used by the scraper
+#
+#  Ports:
+#    - Only `api` is published on :3001.  Dokploy's built-in Traefik proxy
+#      terminates TLS and routes your domain to this port.  Redis and
+#      silentium stay on the private Docker network (no host ports).
+#
+#  Health & ordering:
+#    - `api` waits for `silentium` + `redis` healthchecks before starting.
+#    - `api` exposes its own HEALTHCHECK on GET /api/ (the status endpoint).
+#    - `restart: unless-stopped` keeps everything up across reboots.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Cloudflare bypass — Puppeteer bridge the scraper calls via SILENTIUM_API_URL.
+  # ---------------------------------------------------------------------------
+  silentium:
+    image: quay.io/radityprtama/silentium:latest
+    container_name: layarplus-silentium
+    environment:
+      - HEADLESS=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8191/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks: [layarplus-net]
+
+  # ---------------------------------------------------------------------------
+  # Redis L2 cache. Only used when CACHE_BACKEND=redis; if it is unreachable
+  # the api degrades gracefully to its in-process L1 cache.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: layarplus-redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks: [layarplus-net]
+
+  # ---------------------------------------------------------------------------
+  # LayarPlus API.
+  # ---------------------------------------------------------------------------
+  api:
+    image: quay.io/radityprtama/layarplus-api:latest
+    container_name: layarplus-api
+    ports:
+      - "3001:3001"
+    environment:
+      # --- Server -----------------------------------------------------------
+      - PORT=3001
+      # --- Upstream site ----------------------------------------------------
+      - IDLIX_BASE_URL=${IDLIX_BASE_URL:-https://z2.idlixku.com}
+      # --- Cloudflare bypass service (internal network hostname) -----------
+      - SILENTIUM_API_URL=http://silentium:8191
+      # --- Cache backend ----------------------------------------------------
+      - CACHE_BACKEND=${CACHE_BACKEND:-redis}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-idlc:}
+      # --- GeoIP location-aware trending (set 'false' to force US trending)
+      - ENABLE_GEO_TRENDING=${ENABLE_GEO_TRENDING:-true}
+      # --- Optional TMDB metadata enrichment --------------------------------
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+    depends_on:
+      silentium:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    restart: unless-stopped
+    networks: [layarplus-net]
+
+networks:
+  layarplus-net:
+    driver: bridge
