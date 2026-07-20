@@ -2,8 +2,10 @@
 
 const httpClient = require('../lib/httpClient');
 const cache      = require('../lib/cacheService');
+const logger     = require('../lib/logger');
 const { CACHE_TTL } = require('../config/env');
 const { mapApiItem, ensureContentType } = require('../lib/scraper');
+const { isSupportedNetwork, getNetworkItems: getNetworkItemsIndex } = require('./networkIndex.service');
 
 function buildKey(parts) {
   return parts.filter(Boolean).join('.');
@@ -16,6 +18,33 @@ const HARDCODED_NETWORKS = [
   { slug: 'disney-plus', title: 'Disney+' },
   { slug: 'apple-tv-plus', title: 'Apple TV+' }
 ];
+
+/**
+ * Honest empty result for a network/provider browse page.
+ *
+ * Returned when the slug is unsupported (not in NETWORK_MAP) or when the
+ * requested `type` has no backing data (e.g. `type=movie` before movie
+ * indexing lands). Stable pagination metadata is included so the response
+ * envelope shape matches a populated result — callers need no special-casing
+ * and the frontend's existing empty-state UI renders correctly.
+ *
+ * NOTE: this NEVER falls back to global/popular upstream content. An empty
+ * network catalog is reported as empty.
+ *
+ * @param {number} page
+ * @param {number} limit
+ * @returns {{items: never[], pagination: {currentPage: number, totalPages: number, hasNext: boolean}}}
+ */
+function emptyNetworkResult(page, limit) {
+  return {
+    items: [],
+    pagination: {
+      currentPage: Number(page) || 1,
+      totalPages: 1,
+      hasNext: false,
+    },
+  };
+}
 
 async function getCategoryIndex(category) {
   const key = buildKey([category, 'index']);
@@ -81,31 +110,39 @@ async function getCategoryIndex(category) {
 
 async function getCategoryBrowse(category, value, type, page = 1, limit, sort) {
   if (category === 'network') {
-    const networkIndex = require('./networkIndex.service');
     const nLimit = Number(limit) || 36;
-    const nSort = sort || 'createdAt';
-    const isSeries = type === 'series';
-    const apiPath = isSeries ? '/api/series' : '/api/movies';
-    const qs = `network=${value}&page=${page}&limit=${nLimit}&sort=${nSort}`;
-    try {
-      const data = await httpClient.getJson(`${apiPath}?${qs}`);
-      if (data?.data?.length) {
-        const items = (data.data || [])
-          .map(i => ensureContentType(i, isSeries ? 'tv_series' : 'movie'))
-          .map(mapApiItem)
-          .filter(Boolean);
-        const upstreamPages = data?.totalPages || data?.pagination?.totalPages || 1;
-        return {
-          items,
-          pagination: {
-            currentPage: Number(page),
-            totalPages: Number(upstreamPages),
-            hasNext: Number(page) < Number(upstreamPages),
-          },
-        };
-      }
-    } catch {}
-    return networkIndex.getNetworkItems(value, Number(page), nLimit);
+    const nPage  = Number(page)  || 1;
+    const resSorting = sort || 'createdAt';
+
+    // Strict allowlist gate.
+    // The upstream IDLIX browse endpoints (`/api/movies`, `/api/series`) silently
+    // ignore a `network=<slug>` query param and return the global catalog. Calling
+    // them for a network page therefore yields identical content for EVERY network
+    // slug — the original bug. We never call upstream for network browse.
+    //
+    // Only slugs in the authoritative NETWORK_MAP registry (TMDB network IDs) are
+    // considered real. Unknown / unsupported slugs get an honest empty result,
+    // never a generic upstream catalog and never a best-effort global fallback.
+    if (!isSupportedNetwork(value)) {
+      logger.info({ category, slug: value }, 'network.browse.unsupported: empty result, no upstream call');
+      return emptyNetworkResult(nPage, nLimit);
+    }
+
+    // The local index currently tracks SERIES only (movies are not indexed).
+    // To honour the contract honestly, a `type=movie` request returns an empty
+    // result rather than serving the series index. `type=undefined` ("all")
+    // and `type=series` return the series index. See Phase 2 ADR for the
+    // movie/watch-provider data source.
+    if (type === 'movie') {
+      logger.info({ category, slug: value, type }, 'network.browse.movie-not-indexed: empty result');
+      return emptyNetworkResult(nPage, nLimit);
+    }
+
+    // Supported series-backed network: serve the locally-built, TMDB-ID-keyed
+    // index. This is the only honest per-network catalog the platform has.
+    // (Errors here are surfaced — never swallowed — because an empty index is
+    // a valid state, distinct from a code failure.)
+    return getNetworkItemsIndex(value, nPage, nLimit, resSorting);
   }
 
   const resLimit = Number(limit) || 36;

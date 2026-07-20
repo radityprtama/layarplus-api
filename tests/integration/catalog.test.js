@@ -122,27 +122,123 @@ describe('Catalog Routes', () => {
   });
 
   describe('GET /api/network/:network', () => {
-    it('returns media for a network page from upstream', async () => {
+    const SUPPORTED = ['netflix', 'hbo', 'prime-video', 'disney-plus', 'apple-tv-plus'];
+
+    it('never calls upstream and never returns the global catalog for a supported network', async () => {
+      // Hypothetically upstream WOULD return a global catalog if asked.
+      // The hotfix must refuse to even ask, so a network page cannot be
+      // polluted with generic content.
       httpClient.getJson.mockResolvedValue(MOCK_BROWSE);
 
-      const res = await request(app).get('/api/network/hbo?type=movie');
+      const res = await request(app).get('/api/network/hbo?type=series');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
-      expect(res.body.data).toHaveLength(1);
-      expect(httpClient.getJson).toHaveBeenCalledWith('/api/movies?network=hbo&page=1&limit=36&sort=createdAt');
+      // CRITICAL: upstream is never consulted for network browse.
+      expect(httpClient.getJson).not.toHaveBeenCalled();
+      // No generic catalog leaks through (empty index in the mock -> empty data).
+      expect(res.body.data).toHaveLength(0);
     });
 
-    it('falls back to cached index when upstream returns empty', async () => {
-      httpClient.getJson.mockResolvedValue({ data: [] });
+    it('returns DISTINCT, slug-scoped items for each supported network and never the global catalog', async () => {
+      // Seed the network index cache with deliberately DIFFERENT items per slug
+      // so we can assert each network returns only its own bucket and that a
+      // global catalog is never substituted.
+      const index = {
+        netflix:       [{ slug: 'n1', title: 'NLX Original', type: 'series' }],
+        hbo:           [{ slug: 'h1', title: 'HBO Original', type: 'series' }],
+        'prime-video': [{ slug: 'p1', title: 'Prime Original', type: 'series' }],
+      };
+      cache.isHit.mockImplementation((key) => key === 'network.index.v1');
+      cache.get.mockReturnValue(index);
+      // If upstream were called it would return the same MOCK_BROWSE for every
+      // network — assert it is not called at all.
+      httpClient.getJson.mockResolvedValue(MOCK_BROWSE);
 
-      const res = await request(app).get('/api/network/netflix?type=series');
+      const results = {};
+      for (const slug of ['netflix', 'hbo', 'prime-video']) {
+        const res = await request(app).get(`/api/network/${slug}?type=series`);
+        expect(res.status).toBe(200);
+        results[slug] = res.body.data;
+      }
+
+      expect(httpClient.getJson).not.toHaveBeenCalled();
+      // Each slug returns ONLY its own bucket.
+      expect(results.netflix).toEqual([{ slug: 'n1', title: 'NLX Original', type: 'series' }]);
+      expect(results.hbo).toEqual([{ slug: 'h1', title: 'HBO Original', type: 'series' }]);
+      expect(results['prime-video']).toEqual([{ slug: 'p1', title: 'Prime Original', type: 'series' }]);
+      // Regression: the three sets must not be identical (the original bug).
+      const slugsAcross = Object.values(results).flat().map((i) => i.slug);
+      expect(new Set(slugsAcross).size).toBe(slugsAcross.length);
+    });
+
+    it('returns an honest empty result (not the global catalog) for an unknown slug', async () => {
+      httpClient.getJson.mockResolvedValue(MOCK_BROWSE); // tempting global catalog
+
+      const res = await request(app).get('/api/network/some-fake-network?type=series');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
-      expect(httpClient.getJson).toHaveBeenCalledWith('/api/series?network=netflix&page=1&limit=36&sort=createdAt');
+      expect(res.body.data).toHaveLength(0);
+      expect(httpClient.getJson).not.toHaveBeenCalled();
+      expect(res.body.pagination).toEqual({ currentPage: 1, totalPages: 1, hasNext: false });
+      expect(res.body.filters?.network).toBe('some-fake-network');
+    });
+
+    it('returns an honest empty result for type=movie (movies not yet indexed)', async () => {
+      // Even for a supported network, movies have no backing index today.
+      // We must NOT serve the series index under a movie request, and must
+      // NOT call upstream for movies either.
+      cache.isHit.mockImplementation((key) => key === 'network.index.v1');
+      cache.get.mockReturnValue({
+        netflix: [{ slug: 'n1', title: 'NLX Series', type: 'series' }],
+      });
+      httpClient.getJson.mockResolvedValue(MOCK_BROWSE);
+
+      const res = await request(app).get('/api/network/netflix?type=movie');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]); // series index NOT leaked into movie request
+      expect(httpClient.getJson).not.toHaveBeenCalled();
+    });
+
+    it('emits a structured log for an unsupported slug and never calls upstream', async () => {
+      // logger is silenced in test (level silent) but the call must still occur.
+      const logger = require('../../src/lib/logger');
+      const infoSpy = jest.spyOn(logger, 'info');
+
+      await request(app).get('/api/network/not-a-real-network');
+
+      expect(httpClient.getJson).not.toHaveBeenCalled();
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: 'not-a-real-network' }),
+        'network.browse.unsupported: empty result, no upstream call'
+      );
+      infoSpy.mockRestore();
+    });
+
+    it('serves the series index for type=all (no type query)', async () => {
+      cache.isHit.mockImplementation((key) => key === 'network.index.v1');
+      cache.get.mockReturnValue({
+        hbo: [{ slug: 'h1', title: 'HBO Series A', type: 'series' }],
+      });
+
+      const res = await request(app).get('/api/network/hbo');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(httpClient.getJson).not.toHaveBeenCalled();
+    });
+
+    it('supports every slug in the SUPPORTED_NETWORKS registry', async () => {
+      for (const slug of SUPPORTED) {
+        const res = await request(app).get(`/api/network/${slug}?type=series`);
+        expect(res.status).toBe(200);
+        expect(Array.isArray(res.body.data)).toBe(true);
+        expect(httpClient.getJson).not.toHaveBeenCalled();
+      }
     });
   });
 

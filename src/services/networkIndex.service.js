@@ -22,6 +22,12 @@ const { CACHE_TTL } = require('../config/env');
 
 // Network slug → TMDB network ID
 // ponytail: only the 5 hardcoded from catalog.service.js. Add more here.
+//
+// AUTHORITATIVE REGISTRY.
+// This map is the single source of truth for which network/provider slugs
+// the platform supports. `catalog.service.js` reads SUPPORTED_NETWORKS from
+// here to gate the `/network/:slug` browse path: a slug not in this registry
+// is rejected with an honest empty result (never a generic upstream catalog).
 const NETWORK_MAP = {
   netflix: 213,
   hbo: 49,
@@ -29,6 +35,19 @@ const NETWORK_MAP = {
   'disney-plus': 2739,
   'apple-tv-plus': 2552,
 };
+
+// Strict, exported allowlist of supported network slugs. Keys of NETWORK_MAP
+// only — derived, never hand-maintained twice.
+const SUPPORTED_NETWORKS = Object.freeze(Object.keys(NETWORK_MAP));
+
+/**
+ * Is the given slug a supported network/provider?
+ * @param {string} slug
+ * @returns {boolean}
+ */
+function isSupportedNetwork(slug) {
+  return slug != null && Object.prototype.hasOwnProperty.call(NETWORK_MAP, slug);
+}
 
 // Reverse: TMDB network ID → our slug
 const SLUG_BY_TMDB_ID = {};
@@ -64,14 +83,29 @@ async function getIndex() {
  * Items are looked up from the cached series browse aggregation
  * (series.browse.all) so no upstream calls happen during page load.
  *
+ * Items are sorted by year descending (newest first) and rating descending
+ * as a proxy for upstream `createdAt` order. The sort parameter is accepted
+ * for future use when the stub index carries additional sort fields.
+ *
  * @param {string} slug — 'netflix', 'hbo', etc.
  * @param {number} page
  * @param {number} limit
+ * @param {string} [_sort] — reserved for future sort-field support.
  * @returns {Promise<{items: Array, pagination: Object}>}
  */
-async function getNetworkItems(slug, page = 1, limit = 36) {
+async function getNetworkItems(slug, page = 1, limit = 36, _sort) {
   const index = await getIndex();
-  const allItems = index[slug] || [];
+  let allItems = index[slug] || [];
+
+  // ponytail: sort by year DESC, rating DESC to match upstream default order.
+  // Full rebuild already preserves browse.all iteration order, but incremental
+  // onDetailCached appends at the end — this sorts everything consistently.
+  allItems = [...allItems].sort((a, b) => {
+    const yb = b.year || 0;
+    const ya = a.year || 0;
+    if (yb !== ya) return yb - ya;
+    return (b.rating || 0) - (a.rating || 0);
+  });
 
   const start = (page - 1) * limit;
   const pageItems = allItems.slice(start, start + limit);
@@ -198,4 +232,6 @@ module.exports = {
   onDetailCached,
   NETWORK_MAP,
   SLUG_BY_TMDB_ID,
+  SUPPORTED_NETWORKS,
+  isSupportedNetwork,
 };

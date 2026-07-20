@@ -67,14 +67,17 @@ describe('Genre Routes', () => {
     });
 
     it('uses cache when the entry is fresh', async () => {
-      const cached = [{ title: 'Cached Movie', slug: 'cached-movie' }];
+      const cached = {
+        items: [{ title: 'Cached Movie', slug: 'cached-movie' }],
+        pagination: { currentPage: 1, totalPages: 1, hasNext: false }
+      };
       cache.isHit.mockReturnValue(true);
       cache.get.mockReturnValue(cached);
 
       const res = await request(app).get('/api/genre/movie/action');
 
       expect(res.status).toBe(200);
-      expect(res.body.data).toEqual(cached);
+      expect(res.body.data).toEqual(cached.items);
       expect(httpClient.getJson).not.toHaveBeenCalled();
     });
 

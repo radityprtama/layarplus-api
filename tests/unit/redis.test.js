@@ -123,7 +123,7 @@ describe('Redis client module', () => {
       const redis = require('../../src/lib/redis');
       redis.getClient();
       const opts = mockIoRedisCtor.mock.calls[0][1];
-      expect(opts.connectTimeout).toBe(1000);
+      expect(opts.connectTimeout).toBe(5000);
       expect(opts.enableOfflineQueue).toBe(false);
       expect(opts.maxRetriesPerRequest).toBe(0);
     });

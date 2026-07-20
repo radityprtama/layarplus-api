@@ -15,17 +15,29 @@ const MOCK_HOMEPAGE = {
   above: [
     {
       title: 'Featured',
-      data: [{ title: 'Featured Movie 1', slug: 'feat-1', contentType: 'movie' }]
+      data: [
+        { title: 'Featured Movie 1', slug: 'feat-1', contentType: 'movie' },
+        { title: 'Featured Movie 2', slug: 'feat-2', contentType: 'movie' },
+        { title: 'Featured Movie 3', slug: 'feat-3', contentType: 'movie' },
+      ]
     },
     {
       title: 'Recently Added Movies',
-      data: [{ title: 'Recent Movie 1', slug: 'rec-1', contentType: 'movie' }]
+      data: [
+        { title: 'Recent Movie 1', slug: 'rec-1', contentType: 'movie' },
+        { title: 'Recent Movie 2', slug: 'rec-2', contentType: 'movie' },
+        { title: 'Recent Movie 3', slug: 'rec-3', contentType: 'movie' },
+      ]
     }
   ],
   below: [
     {
       title: 'Collections',
-      data: [{ title: 'Collection 1', slug: 'col-1', contentType: 'movie' }]
+      data: [
+        { title: 'Collection 1', slug: 'col-1', contentType: 'movie' },
+        { title: 'Collection 2', slug: 'col-2', contentType: 'movie' },
+        { title: 'Collection 3', slug: 'col-3', contentType: 'movie' },
+      ]
     }
   ]
 };
@@ -104,18 +116,20 @@ describe('Homepage Routes', () => {
       const res = await request(app).get('/api/home/sections');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+      // Sections that survive curation (≥3 items after dedup) are keyed by title
       expect(res.body.data['Featured']).toBeDefined();
       expect(res.body.data['Featured'][0].title).toBe('Featured Movie 1');
-      expect(res.body.data['Recently Added Movies']).toBeDefined();
+      // 'Recently Added Movies' is merged and re-titled to display name
+      expect(res.body.data['Recently Added']).toBeDefined();
       expect(res.body.data['Collections']).toBeDefined();
     });
 
-    it('returns empty object when API returns null', async () => {
+    it('returns empty curated result when API returns null', async () => {
       httpClient.getJson.mockResolvedValue(null);
 
       const res = await request(app).get('/api/home/sections');
       expect(res.status).toBe(200);
-      expect(res.body.data).toEqual({});
+      expect(res.body.data).toEqual({ _curated: [] });
     });
   });
 
@@ -133,7 +147,7 @@ describe('Homepage Routes', () => {
 
       const res = await request(app).get('/api/home');
       expect(res.status).toBe(200);
-      expect(res.body.data).toHaveLength(3); // Featured, Recent, Collection
+      expect(res.body.data).toHaveLength(9); // 3 sections × 3 items each
     });
   });
 });

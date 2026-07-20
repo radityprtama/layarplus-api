@@ -32,14 +32,14 @@ describe("scraper.js", () => {
         quality: "HD",
         rating: 8.8,
         season: null,
-        poster: "https://image.tmdb.org/t/p/w370/poster.jpg",
+        poster: "https://image.tmdb.org/t/p/w342/poster.jpg",
         backdrop: null,
         logo: null,
         slug: "inception",
         link: {
           endpoint: "movie/inception",
           url: "https://z2.idlixku.com/movie/inception",
-          thumbnail: "https://image.tmdb.org/t/p/w370/poster.jpg",
+          thumbnail: "https://image.tmdb.org/t/p/w342/poster.jpg",
         },
       });
     });
@@ -115,14 +115,14 @@ describe("scraper.js", () => {
           quality: null,
           rating: 7.5,
           season: "S1:E9",
-          poster: "https://image.tmdb.org/t/p/w370/still.jpg",
-          backdrop: null,
-          logo: null,
-          slug: "reborn-rookie-2026",
-          link: {
-            endpoint: "series/reborn-rookie-2026",
-            url: "https://z2.idlixku.com/series/reborn-rookie-2026",
-            thumbnail: "https://image.tmdb.org/t/p/w370/still.jpg",
+poster: "https://image.tmdb.org/t/p/w342/still.jpg",
+        backdrop: null,
+        logo: null,
+        slug: "reborn-rookie-2026",
+        link: {
+          endpoint: "series/reborn-rookie-2026",
+          url: "https://z2.idlixku.com/series/reborn-rookie-2026",
+          thumbnail: "https://image.tmdb.org/t/p/w342/still.jpg",
           },
         });
       });
@@ -144,10 +144,10 @@ describe("scraper.js", () => {
 
         const mapped = mapApiItem(apiItem);
         expect(mapped.poster).toBe(
-          "https://image.tmdb.org/t/p/w370/series-poster.jpg",
+          "https://image.tmdb.org/t/p/w342/series-poster.jpg",
         );
         expect(mapped.link.thumbnail).toBe(
-          "https://image.tmdb.org/t/p/w370/series-poster.jpg",
+          "https://image.tmdb.org/t/p/w342/series-poster.jpg",
         );
       });
 
@@ -283,7 +283,7 @@ describe("scraper.js", () => {
         runtime: "PT169M",
         runtimeMinutes: 169,
         overview: "A team of explorers travel through a wormhole...",
-        poster: "https://image.tmdb.org/t/p/w370/interstellar.jpg",
+        poster: "https://image.tmdb.org/t/p/w342/interstellar.jpg",
         backdrop: "https://image.tmdb.org/t/p/w1280/interstellar_bg.jpg",
         logo: null,
         backdrops: null,

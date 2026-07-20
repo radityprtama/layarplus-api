@@ -266,7 +266,7 @@ describe("GET /api/trending/near-you", () => {
       year: 2026,
       type: "movie",
       rating: 7.5,
-      poster: "https://image.tmdb.org/t/p/w370/p.jpg",
+      poster: "https://image.tmdb.org/t/p/w342/p.jpg",
     });
     expect(item.link).toMatchObject({ endpoint: "movie/solo-movie-2026" });
   });
