@@ -28,16 +28,20 @@ const { CACHE_TTL } = require('../config/env');
 // the platform supports. `catalog.service.js` reads SUPPORTED_NETWORKS from
 // here to gate the `/network/:slug` browse path: a slug not in this registry
 // is rejected with an honest empty result (never a generic upstream catalog).
+// Network slug → TMDB network / production company IDs
 const NETWORK_MAP = {
-  netflix: 213,
-  hbo: 49,
-  'prime-video': 1024,
-  'disney-plus': 2739,
-  'apple-tv-plus': 2552,
+  'netflix': [213, 14500, 1632, 11463, 178464],
+  'hbo': [49, 3186, 128064, 3214],
+  'prime-video': [1024, 2058, 125032],
+  'disney-plus': [2739, 4353, 2, 3475],
+  'apple-tv-plus': [2552, 95166],
+  'paramount-plus': [4330, 4, 24, 10221],
+  'hulu': [453, 90899],
+  'cw': [71],
+  'marvel': [420, 7505, 13252],
 };
 
-// Strict, exported allowlist of supported network slugs. Keys of NETWORK_MAP
-// only — derived, never hand-maintained twice.
+// Strict, exported allowlist of supported network slugs.
 const SUPPORTED_NETWORKS = Object.freeze(Object.keys(NETWORK_MAP));
 
 /**
@@ -49,15 +53,16 @@ function isSupportedNetwork(slug) {
   return slug != null && Object.prototype.hasOwnProperty.call(NETWORK_MAP, slug);
 }
 
-// Reverse: TMDB network ID → our slug
+// Reverse: TMDB ID → our slug
 const SLUG_BY_TMDB_ID = {};
-for (const [slug, tid] of Object.entries(NETWORK_MAP)) {
-  SLUG_BY_TMDB_ID[tid] = slug;
+for (const [slug, ids] of Object.entries(NETWORK_MAP)) {
+  const idArray = Array.isArray(ids) ? ids : [ids];
+  for (const tid of idArray) {
+    SLUG_BY_TMDB_ID[tid] = slug;
+  }
 }
 
 const INDEX_KEY = 'network.index.v1';
-// ponytail: index TTL matches detail TTL so rebuild sees fresh detail pages.
-// If detail pages are fresher than the index, next rebuild picks them up.
 const INDEX_TTL = CACHE_TTL.detail || 2;
 
 // ———————————————————————————————————————————————————————————————————————————
@@ -80,26 +85,22 @@ async function getIndex() {
 /**
  * Return paginated MediaItem data for a network slug.
  *
- * Items are looked up from the cached series browse aggregation
- * (series.browse.all) so no upstream calls happen during page load.
- *
- * Items are sorted by year descending (newest first) and rating descending
- * as a proxy for upstream `createdAt` order. The sort parameter is accepted
- * for future use when the stub index carries additional sort fields.
- *
  * @param {string} slug — 'netflix', 'hbo', etc.
  * @param {number} page
  * @param {number} limit
- * @param {string} [_sort] — reserved for future sort-field support.
+ * @param {string} [_sort]
+ * @param {string} [type] — 'movie' | 'series' | undefined
  * @returns {Promise<{items: Array, pagination: Object}>}
  */
-async function getNetworkItems(slug, page = 1, limit = 36, _sort) {
+async function getNetworkItems(slug, page = 1, limit = 36, _sort, type) {
   const index = await getIndex();
   let allItems = index[slug] || [];
 
-  // ponytail: sort by year DESC, rating DESC to match upstream default order.
-  // Full rebuild already preserves browse.all iteration order, but incremental
-  // onDetailCached appends at the end — this sorts everything consistently.
+  if (type && type !== 'all') {
+    allItems = allItems.filter(i => i.type === type);
+  }
+
+  // Sort by year DESC, rating DESC
   allItems = [...allItems].sort((a, b) => {
     const yb = b.year || 0;
     const ya = a.year || 0;
@@ -109,6 +110,11 @@ async function getNetworkItems(slug, page = 1, limit = 36, _sort) {
 
   const start = (page - 1) * limit;
   const pageItems = allItems.slice(start, start + limit);
+
+  // If index is cold/sparse (< 20 items), trigger background warmup
+  if (allItems.length < 20) {
+    warmUpNetworkIndex().catch(() => {});
+  }
 
   return {
     items: pageItems,
@@ -120,18 +126,83 @@ async function getNetworkItems(slug, page = 1, limit = 36, _sort) {
   };
 }
 
+let isWarmingUp = false;
+
 /**
- * Called after a series detail is fetched and cached.
+ * Background seeder that populates network indexes by fetching details
+ * for top trending & browse titles in small async batches.
+ */
+async function warmUpNetworkIndex() {
+  if (isWarmingUp) return;
+  isWarmingUp = true;
+
+  try {
+    const httpClient = require('../lib/httpClient');
+    const { mapApiDetail } = require('../lib/scraper');
+    const logger = require('../lib/logger');
+
+    logger.info('network.warmup: starting background index warmup...');
+
+    // Fetch top series & movies browse pages
+    const [seriesRes, moviesRes] = await Promise.allSettled([
+      httpClient.getJson('/api/series?page=1&limit=60&sort=popularityScore'),
+      httpClient.getJson('/api/movies?page=1&limit=60&sort=popularityScore'),
+    ]);
+
+    const seriesItems = seriesRes.status === 'fulfilled' && seriesRes.value?.data ? seriesRes.value.data : [];
+    const movieItems = moviesRes.status === 'fulfilled' && moviesRes.value?.data ? moviesRes.value.data : [];
+
+    const candidates = [
+      ...seriesItems.map(i => ({ slug: i.slug, type: 'series' })),
+      ...movieItems.map(i => ({ slug: i.slug, type: 'movie' })),
+    ];
+
+    // Batch process 5 items at a time
+    for (let i = 0; i < candidates.length; i += 5) {
+      const batch = candidates.slice(i, i + 5);
+      await Promise.all(
+        batch.map(async (item) => {
+          if (!item.slug) return;
+          const detailKey = `${item.type}.detail.${item.slug}`;
+          if (!cache.isHit(detailKey, CACHE_TTL.detail)) {
+            try {
+              const res = await httpClient.getJson(`/api/${item.type}/${item.slug}`);
+              if (res && res.data) {
+                const mapped = mapApiDetail(res.data);
+                cache.set(detailKey, mapped);
+                onDetailCached(mapped);
+              }
+            } catch (err) {
+              // ignore single item errors
+            }
+          } else {
+            const cached = cache.get(detailKey);
+            if (cached) onDetailCached(cached);
+          }
+        })
+      );
+    }
+    logger.info('network.warmup: background index warmup completed');
+  } catch (err) {
+    // ignore overall warmup errors
+  } finally {
+    isWarmingUp = false;
+  }
+}
+
+/**
+ * Called after a movie or series detail is fetched and cached.
  * Incrementally updates the index so it stays warm without a full rebuild.
- *
- * Stores a lightweight item stub ({ slug, title, poster }) alongside each
- * slug so the browse endpoint can render items without reading the browse
- * aggregation — the index is self-contained.
  *
  * @param {Object} detail — the full return value from mapApiDetail
  */
 function onDetailCached(detail) {
-  if (!detail || !detail.networks || !detail.networks.length) return;
+  if (!detail) return;
+  const networks = detail.networks || [];
+  const companies = detail.productionCompanies || [];
+  const allProviders = [...networks, ...companies];
+  if (!allProviders.length) return;
+
   let index = cache.get(INDEX_KEY);
   if (!index) {
     index = {};
@@ -145,12 +216,13 @@ function onDetailCached(detail) {
     backdrop: detail.backdrop,
     rating: detail.rating,
     year: detail.year,
-    type: 'series',
+    type: detail.type || 'series',
   };
 
-  for (const n of detail.networks) {
-    const ourSlug = SLUG_BY_TMDB_ID[n.id];
+  for (const provider of allProviders) {
+    const ourSlug = SLUG_BY_TMDB_ID[provider.id];
     if (ourSlug) {
+      if (!index[ourSlug]) index[ourSlug] = [];
       const exists = index[ourSlug].some((e) => e.slug === detail.slug);
       if (!exists) index[ourSlug].push(stub);
     }
