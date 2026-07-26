@@ -136,6 +136,14 @@ async function getDetail(slug) {
       throw err;
     }
 
+    // Notify network index so movies get indexed too
+    try {
+      const ni = require('./networkIndex.service');
+      ni.onDetailCached(detail);
+    } catch {
+      /* network index not ready — next rebuild picks this up */
+    }
+
     return detail;
   });
 }

@@ -63,6 +63,10 @@ function mapApiItem(item) {
     if (sn != null && en != null) season = `S${sn}:E${en}`;
   }
 
+  // For featured/hero carousel items, trailerUrl lives on the outer item
+  // wrapper (alongside .content), not on the inner content object.
+  const trailerUrl = item.trailerUrl || src.trailerUrl || null;
+
   return {
     title: isEpisode ? src.name || "" : src.title || "",
     originalTitle: isEpisode ? epSeries.title || "" : src.title || "",
@@ -75,6 +79,7 @@ function mapApiItem(item) {
     backdrop: backdropUrl,
     logo: logoUrl,
     slug,
+    trailer: trailerUrl,
     link: endpoint
       ? {
           endpoint,

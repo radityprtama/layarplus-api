@@ -254,42 +254,70 @@ async function rebuildIndex() {
 
   // series.browse.all is the cached aggregation of ALL upstream series pages.
   // Read it synchronously from L1 cache if available.
-  const allKey = 'series.browse.all';
-  const allSeries = cache.isHit(allKey, CACHE_TTL.page)
-    ? cache.get(allKey)
+  const seriesKey = 'series.browse.all';
+  const allSeries = cache.isHit(seriesKey, CACHE_TTL.page)
+    ? cache.get(seriesKey)
     : null;
 
-  if (!allSeries || !allSeries.items) {
-    // ponytail: no browse cache yet — return empty index.
-    // First network page visit will trigger a series browse (which builds
-    // the browse.all cache) and then a network page reload will rebuild
-    // this index with real data.
-    cache.set(INDEX_KEY, index, { ttlMs: INDEX_TTL * 3_600_000 });
-    return index;
+  if (allSeries && allSeries.items) {
+    for (const item of allSeries.items) {
+      const detailKey = `series.detail.${item.slug}`;
+      if (!cache.isHit(detailKey, CACHE_TTL.detail)) continue;
+
+      const detail = cache.get(detailKey);
+      if (!detail || !detail.networks) continue;
+
+      const stub = {
+        slug: detail.slug,
+        title: detail.title,
+        poster: detail.poster,
+        backdrop: detail.backdrop,
+        rating: detail.rating,
+        year: detail.year,
+        type: 'series',
+      };
+
+      for (const n of detail.networks) {
+        const ourSlug = SLUG_BY_TMDB_ID[n.id];
+        if (ourSlug) {
+          const exists = index[ourSlug].some((e) => e.slug === detail.slug);
+          if (!exists) index[ourSlug].push(stub);
+        }
+      }
+    }
   }
 
-  for (const item of allSeries.items) {
-    const detailKey = `series.detail.${item.slug}`;
-    if (!cache.isHit(detailKey, CACHE_TTL.detail)) continue;
+  // movie.browse.all — same treatment so movies appear in network pages too.
+  const movieKey = 'movie.browse.all';
+  const allMovies = cache.isHit(movieKey, CACHE_TTL.page)
+    ? cache.get(movieKey)
+    : null;
 
-    const detail = cache.get(detailKey);
-    if (!detail || !detail.networks) continue;
+  if (allMovies && allMovies.items) {
+    for (const item of allMovies.items) {
+      const detailKey = `movie.detail.${item.slug}`;
+      if (!cache.isHit(detailKey, CACHE_TTL.detail)) continue;
 
-    const stub = {
-      slug: detail.slug,
-      title: detail.title,
-      poster: detail.poster,
-      backdrop: detail.backdrop,
-      rating: detail.rating,
-      year: detail.year,
-      type: 'series',
-    };
+      const detail = cache.get(detailKey);
+      if (!detail || !(detail.networks || detail.productionCompanies)) continue;
 
-    for (const n of detail.networks) {
-      const ourSlug = SLUG_BY_TMDB_ID[n.id];
-      if (ourSlug) {
-        const exists = index[ourSlug].some((e) => e.slug === detail.slug);
-        if (!exists) index[ourSlug].push(stub);
+      const stub = {
+        slug: detail.slug,
+        title: detail.title,
+        poster: detail.poster,
+        backdrop: detail.backdrop,
+        rating: detail.rating,
+        year: detail.year,
+        type: 'movie',
+      };
+
+      const providers = [...(detail.networks || []), ...(detail.productionCompanies || [])];
+      for (const provider of providers) {
+        const ourSlug = SLUG_BY_TMDB_ID[provider.id];
+        if (ourSlug) {
+          const exists = index[ourSlug].some((e) => e.slug === detail.slug);
+          if (!exists) index[ourSlug].push(stub);
+        }
       }
     }
   }
